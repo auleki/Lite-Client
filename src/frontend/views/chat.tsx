@@ -153,10 +153,12 @@ const ChatView = (): JSX.Element => {
         updateDialogueEntries(question, account);
         break;
 
-      default:
+      default: {
         // If the transaction type is not recognized, we will not proceed with the transaction.
         const errorMessage = `Error: Invalid transaction type: ${action.type}`;
         updateDialogueEntries(question, errorMessage);
+        break;
+      }
     }
   };
 
