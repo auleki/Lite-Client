@@ -18,6 +18,8 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling 
   const [isReplacing, setIsReplacing] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'name' | 'size' | 'popularity'>('name');
+  const [pullStatus, setPullStatus] = useState<string>('');
+  const [pullProgress, setPullProgress] = useState<number>(0);
 
   const loadRegistryModels = async (forceRefresh = false) => {
     setIsLoading(true);
@@ -134,6 +136,28 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling 
     loadRegistryModels();
   }, []);
 
+  // Listen for Ollama status updates
+  useEffect(() => {
+    const handleStatusUpdate = (status: string) => {
+      console.log('Ollama status update:', status);
+      setPullStatus(status);
+
+      // Extract progress from status messages
+      const progressMatch = status.match(/(\d+)%/);
+      if (progressMatch) {
+        setPullProgress(parseInt(progressMatch[1]));
+      } else if (status.includes('pulling') || status.includes('downloading')) {
+        setPullProgress((prev) => Math.min(prev + 10, 90)); // Incremental progress
+      }
+    };
+
+    window.backendBridge.ollama.onStatusUpdate(handleStatusUpdate);
+
+    return () => {
+      // Clean up listener if needed
+    };
+  }, []);
+
   if (isLoading) {
     return (
       <Registry.Container>
@@ -147,6 +171,32 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling 
 
   return (
     <Registry.Container>
+      {/* Pull Progress Overlay */}
+      {(isPulling || isReplacing) && (
+        <Registry.PullOverlay>
+          <Registry.PullModal>
+            <Registry.PullIcon>📦</Registry.PullIcon>
+            <Registry.PullTitle>
+              {isReplacing ? 'Replacing Model' : 'Pulling Model'}
+            </Registry.PullTitle>
+            <Registry.PullSubtitle>
+              {isPulling || 'This may take several minutes...'}
+            </Registry.PullSubtitle>
+
+            <Registry.ProgressContainer>
+              <Registry.ProgressBar>
+                <Registry.ProgressFill progress={pullProgress} />
+              </Registry.ProgressBar>
+              <Registry.ProgressText>{pullProgress}%</Registry.ProgressText>
+            </Registry.ProgressContainer>
+
+            <Registry.StatusText>{pullStatus || 'Initializing...'}</Registry.StatusText>
+
+            <Registry.PullSpinner />
+          </Registry.PullModal>
+        </Registry.PullOverlay>
+      )}
+
       {/* Header Section */}
       <Registry.Header>
         <Registry.HeaderLeft>
@@ -832,6 +882,103 @@ const Registry = {
     color: #64748b;
     font-size: 14px;
     margin: 0;
+  `,
+
+  // Pull Progress Overlay
+  PullOverlay: Styled.div`
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  `,
+
+  PullModal: Styled.div`
+    background: #1e293b;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  `,
+
+  PullIcon: Styled.div`
+    font-size: 48px;
+    color: #10b981;
+  `,
+
+  PullTitle: Styled.h2`
+    font-size: 24px;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin: 0;
+  `,
+
+  PullSubtitle: Styled.p`
+    font-size: 16px;
+    color: #94a3b8;
+    margin: 0;
+  `,
+
+  ProgressContainer: Styled.div`
+    width: 100%;
+    max-width: 250px;
+    position: relative;
+  `,
+
+  ProgressBar: Styled.div`
+    width: 100%;
+    height: 8px;
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 4px;
+    overflow: hidden;
+  `,
+
+  ProgressFill: Styled.div<{ progress: number }>`
+    height: 100%;
+    background: linear-gradient(to right, #10b981, #059669);
+    width: ${(props) => props.progress}%;
+    border-radius: 4px;
+    transition: width 0.3s ease-in-out;
+  `,
+
+  ProgressText: Styled.span`
+    font-size: 14px;
+    font-weight: 500;
+    color: #f1f5f9;
+    position: absolute;
+    top: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+  `,
+
+  StatusText: Styled.p`
+    font-size: 14px;
+    color: #94a3b8;
+    margin: 0;
+  `,
+
+  PullSpinner: Styled.div`
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(148, 163, 184, 0.2);
+    border-top: 3px solid #10b981;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   `,
 };
 
