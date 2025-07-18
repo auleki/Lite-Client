@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('backendBridge', {
     minimize: () => ipcRenderer.send(IpcChannel.Minimize),
   },
   ollama: {
-    init: (result: boolean) => invokeNoParam<boolean>(OllamaChannel.OllamaInit, result),
+    init: () => invokeNoParam<boolean>(OllamaChannel.OllamaInit),
     onStatusUpdate: (callback: (status: string) => void) =>
       ipcRenderer.on(OllamaChannel.OllamaStatusUpdate, (_, status) => callback(status)),
     question: ({ model, query }: OllamaQuestion) =>
