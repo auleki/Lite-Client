@@ -4,9 +4,10 @@ import { RegistryModel, CacheStatus, DiskSpaceInfo } from '../renderer.d';
 
 interface RegistryModelsProps {
   onModelPull?: (modelName: string) => void;
+  isPulling?: string | null;
 }
 
-const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
+const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling }) => {
   const [registryModels, setRegistryModels] = useState<RegistryModel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +16,8 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
   const [diskSpaceInfo, setDiskSpaceInfo] = useState<DiskSpaceInfo | null>(null);
   const [currentModel, setCurrentModel] = useState<any>(null);
   const [isReplacing, setIsReplacing] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [sortBy, setSortBy] = useState<'name' | 'size' | 'popularity'>('name');
 
   const loadRegistryModels = async (forceRefresh = false) => {
     setIsLoading(true);
@@ -52,15 +55,11 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
   const handleClearCache = async () => {
     try {
       await window.backendBridge.ollama.clearRegistryCache();
-      setCacheStatus({ hasCache: false, age: null, isExpired: true });
+      await loadRegistryModels(true);
     } catch (err) {
-      console.error('Failed to clear cache:', err);
+      console.error('Error clearing cache:', err);
     }
   };
-
-  useEffect(() => {
-    loadRegistryModels();
-  }, []);
 
   const handleModelPull = (modelName: string) => {
     if (onModelPull) {
@@ -83,97 +82,183 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
     }
   };
 
-  const filteredModels = registryModels.filter(
-    (model) =>
-      model.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      model.description.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-
   const formatSize = (bytes: number): string => {
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    if (bytes === 0) return '0 B';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+    const gb = bytes / (1024 * 1024 * 1024);
+    if (gb >= 1) {
+      return `${gb.toFixed(1)} GB`;
+    }
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(1)} MB`;
   };
 
   const formatCacheAge = (age: number): string => {
-    if (age < 60000) return `${Math.round(age / 1000)}s ago`;
-    if (age < 3600000) return `${Math.round(age / 60000)}m ago`;
-    return `${Math.round(age / 3600000)}h ago`;
+    const minutes = Math.floor(age / (1000 * 60));
+    if (minutes < 60) {
+      return `${minutes}m ago`;
+    }
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ago`;
   };
 
+  const filteredModels = registryModels.filter(
+    (model) =>
+      model.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      model.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      model.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase())),
+  );
+
+  const sortedModels = [...filteredModels].sort((a, b) => {
+    switch (sortBy) {
+      case 'name': {
+        return a.name.localeCompare(b.name);
+      }
+      case 'size': {
+        return b.size - a.size;
+      }
+      case 'popularity': {
+        // Simple popularity based on model name patterns
+        const aPopular =
+          a.name.includes('llama') || a.name.includes('gpt') || a.name.includes('mistral');
+        const bPopular =
+          b.name.includes('llama') || b.name.includes('gpt') || b.name.includes('mistral');
+        if (aPopular && !bPopular) return -1;
+        if (!aPopular && bPopular) return 1;
+        return a.name.localeCompare(b.name);
+      }
+      default:
+        return 0;
+    }
+  });
+
+  useEffect(() => {
+    loadRegistryModels();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <Registry.Container>
+        <Registry.LoadingState>
+          <Registry.LoadingSpinner />
+          <Registry.LoadingText>Loading models...</Registry.LoadingText>
+        </Registry.LoadingState>
+      </Registry.Container>
+    );
+  }
+
   return (
-    <Registry.Layout>
+    <Registry.Container>
+      {/* Header Section */}
       <Registry.Header>
-        <Registry.Title>Available Models</Registry.Title>
-        <Registry.ButtonGroup>
-          <Registry.RefreshButton onClick={handleForceRefresh} disabled={isLoading}>
-            ↻
+        <Registry.HeaderLeft>
+          <Registry.Title>Model Registry</Registry.Title>
+          <Registry.Subtitle>Discover and install AI models</Registry.Subtitle>
+        </Registry.HeaderLeft>
+
+        <Registry.HeaderRight>
+          <Registry.ViewToggle>
+            <Registry.ViewButton active={viewMode === 'grid'} onClick={() => setViewMode('grid')}>
+              <Registry.GridIcon />
+            </Registry.ViewButton>
+            <Registry.ViewButton active={viewMode === 'list'} onClick={() => setViewMode('list')}>
+              <Registry.ListIcon />
+            </Registry.ViewButton>
+          </Registry.ViewToggle>
+
+          <Registry.RefreshButton onClick={handleForceRefresh}>
+            <Registry.RefreshIcon />
           </Registry.RefreshButton>
-          <Registry.ClearCacheButton onClick={handleClearCache} disabled={isLoading}>
-            🗑
-          </Registry.ClearCacheButton>
-        </Registry.ButtonGroup>
+        </Registry.HeaderRight>
       </Registry.Header>
 
-      {cacheStatus && (
-        <Registry.CacheStatus>
-          {cacheStatus.hasCache ? (
-            <span>
-              📦 Cached {formatCacheAge(cacheStatus.age || 0)}
-              {cacheStatus.isExpired && ' (expired)'}
-            </span>
+      {/* Stats Bar */}
+      <Registry.StatsBar>
+        <Registry.StatItem>
+          <Registry.StatIcon>📦</Registry.StatIcon>
+          <Registry.StatText>{filteredModels.length} models</Registry.StatText>
+        </Registry.StatItem>
+
+        {diskSpaceInfo && (
+          <Registry.StatItem>
+            <Registry.StatIcon>💾</Registry.StatIcon>
+            <Registry.StatText>{diskSpaceInfo.freeGB}GB free</Registry.StatText>
+          </Registry.StatItem>
+        )}
+
+        {currentModel && (
+          <Registry.StatItem>
+            <Registry.StatIcon>🎯</Registry.StatIcon>
+            <Registry.StatText>Current: {currentModel.name}</Registry.StatText>
+          </Registry.StatItem>
+        )}
+
+        {cacheStatus && (
+          <Registry.StatItem>
+            <Registry.StatIcon>⏰</Registry.StatIcon>
+            <Registry.StatText>Updated {formatCacheAge(cacheStatus.age || 0)}</Registry.StatText>
+          </Registry.StatItem>
+        )}
+      </Registry.StatsBar>
+
+      {/* Controls Section */}
+      <Registry.Controls>
+        <Registry.SearchContainer>
+          <Registry.SearchIcon />
+          <Registry.SearchInput
+            type="text"
+            placeholder="Search models by name, description, or tags..."
+            value={searchTerm}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+          />
+        </Registry.SearchContainer>
+
+        <Registry.SortContainer>
+          <Registry.SortLabel>Sort by:</Registry.SortLabel>
+          <Registry.SortSelect value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
+            <option value="name">Name</option>
+            <option value="size">Size</option>
+            <option value="popularity">Popularity</option>
+          </Registry.SortSelect>
+        </Registry.SortContainer>
+      </Registry.Controls>
+
+      {/* Error State */}
+      {error && (
+        <Registry.ErrorContainer>
+          <Registry.ErrorIcon>⚠️</Registry.ErrorIcon>
+          <Registry.ErrorText>{error}</Registry.ErrorText>
+          <Registry.RetryButton onClick={handleForceRefresh}>Retry</Registry.RetryButton>
+        </Registry.ErrorContainer>
+      )}
+
+      {/* Models Grid/List */}
+      {!error && (
+        <Registry.ModelsContainer viewMode={viewMode}>
+          {sortedModels.length === 0 ? (
+            <Registry.EmptyState>
+              <Registry.EmptyIcon>🔍</Registry.EmptyIcon>
+              <Registry.EmptyTitle>No models found</Registry.EmptyTitle>
+              <Registry.EmptyText>
+                {searchTerm ? 'Try adjusting your search terms' : 'No models available in registry'}
+              </Registry.EmptyText>
+            </Registry.EmptyState>
           ) : (
-            <span>📡 No cache available</span>
-          )}
-        </Registry.CacheStatus>
-      )}
-
-      {diskSpaceInfo && (
-        <Registry.DiskSpaceInfo>
-          💾 Disk Space: {diskSpaceInfo.freeGB}GB free of {diskSpaceInfo.totalGB}GB total
-        </Registry.DiskSpaceInfo>
-      )}
-
-      {currentModel && (
-        <Registry.CurrentModelInfo>
-          🎯 Current Model: {currentModel.name} ({currentModel.parameter_size})
-        </Registry.CurrentModelInfo>
-      )}
-
-      <Registry.SearchInput
-        type="text"
-        placeholder="Search models..."
-        value={searchTerm}
-        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-      />
-
-      {isLoading && (
-        <Registry.LoadingMessage>Loading models from registry...</Registry.LoadingMessage>
-      )}
-
-      {error && <Registry.ErrorMessage>{error}</Registry.ErrorMessage>}
-
-      {!isLoading && !error && (
-        <Registry.ModelsList>
-          {filteredModels.length === 0 ? (
-            <Registry.EmptyMessage>
-              {searchTerm ? 'No models found matching your search.' : 'No models available.'}
-            </Registry.EmptyMessage>
-          ) : (
-            filteredModels.map((model) => (
-              <Registry.ModelCard key={model.name}>
-                <Registry.ModelHeader>
+            sortedModels.map((model) => (
+              <Registry.ModelCard key={model.name} viewMode={viewMode}>
+                <Registry.ModelCardHeader>
                   <Registry.ModelInfo>
                     <Registry.ModelName>{model.name}</Registry.ModelName>
                     <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
                   </Registry.ModelInfo>
+
                   <Registry.ModelStatus>
                     {model.isInstalled && (
-                      <Registry.InstalledBadge>✓ Installed</Registry.InstalledBadge>
+                      <Registry.InstalledBadge>
+                        <Registry.CheckIcon />
+                        Installed
+                      </Registry.InstalledBadge>
                     )}
                   </Registry.ModelStatus>
-                </Registry.ModelHeader>
+                </Registry.ModelCardHeader>
 
                 {model.description && (
                   <Registry.ModelDescription>{model.description}</Registry.ModelDescription>
@@ -181,31 +266,35 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
 
                 {model.tags && model.tags.length > 0 && (
                   <Registry.ModelTags>
-                    {model.tags.map((tag, index) => (
+                    {model.tags.slice(0, 3).map((tag, index) => (
                       <Registry.Tag key={index}>{tag}</Registry.Tag>
                     ))}
+                    {model.tags.length > 3 && (
+                      <Registry.TagMore>+{model.tags.length - 3}</Registry.TagMore>
+                    )}
                   </Registry.ModelTags>
                 )}
 
-                <Registry.ModelFooter>
-                  <Registry.SpaceInfo>
-                    {diskSpaceInfo && (
-                      <Registry.SpaceCheck>
-                        {diskSpaceInfo.free > model.size ? (
-                          <Registry.SpaceSuccess>✓ Enough space</Registry.SpaceSuccess>
-                        ) : (
-                          <Registry.SpaceError>
-                            ✗ Need{' '}
-                            {(
-                              model.size / (1024 * 1024 * 1024) -
-                              parseFloat(diskSpaceInfo.freeGB)
-                            ).toFixed(1)}
-                            GB more
-                          </Registry.SpaceError>
-                        )}
-                      </Registry.SpaceCheck>
-                    )}
-                  </Registry.SpaceInfo>
+                <Registry.ModelCardFooter>
+                  <Registry.SpaceIndicator>
+                    {diskSpaceInfo &&
+                      (diskSpaceInfo.free > model.size ? (
+                        <Registry.SpaceSuccess>
+                          <Registry.SpaceIcon>✓</Registry.SpaceIcon>
+                          Enough space
+                        </Registry.SpaceSuccess>
+                      ) : (
+                        <Registry.SpaceError>
+                          <Registry.SpaceIcon>✗</Registry.SpaceIcon>
+                          Need{' '}
+                          {(
+                            model.size / (1024 * 1024 * 1024) -
+                            parseFloat(diskSpaceInfo.freeGB)
+                          ).toFixed(1)}
+                          GB more
+                        </Registry.SpaceError>
+                      ))}
+                  </Registry.SpaceIndicator>
 
                   <Registry.ActionButtons>
                     <Registry.PullButton
@@ -213,325 +302,536 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
                       disabled={
                         model.isInstalled ||
                         (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
-                        isReplacing
+                        isReplacing ||
+                        isPulling === model.name
                       }
                     >
-                      {model.isInstalled ? 'Installed' : 'Pull Model'}
+                      {model.isInstalled
+                        ? 'Installed'
+                        : isPulling === model.name
+                          ? 'Pulling...'
+                          : 'Pull'}
                     </Registry.PullButton>
+
                     {currentModel && currentModel.name !== model.name && (
                       <Registry.ReplaceButton
                         onClick={() => handlePullAndReplace(model.name)}
-                        disabled={isReplacing}
+                        disabled={isReplacing || isPulling === model.name}
                       >
-                        {isReplacing ? 'Replacing...' : 'Pull & Replace'}
+                        {isReplacing ? 'Replacing...' : 'Replace'}
                       </Registry.ReplaceButton>
                     )}
                   </Registry.ActionButtons>
-                </Registry.ModelFooter>
+                </Registry.ModelCardFooter>
               </Registry.ModelCard>
             ))
           )}
-        </Registry.ModelsList>
+        </Registry.ModelsContainer>
       )}
-    </Registry.Layout>
+    </Registry.Container>
   );
 };
 
 const Registry = {
-  Layout: Styled.div`
+  Container: Styled.div`
     display: flex;
     flex-direction: column;
-    width: 100%;
-    height: 100%;
-    background: ${(props) => props.theme.colors.core};
-    padding: 20px;
+    height: 100vh;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0;
+    overflow: hidden;
   `,
+
+  // Header Section
   Header: Styled.div`
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    padding: 24px 32px;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   `,
-  Title: Styled.h2`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.medium};
+
+  HeaderLeft: Styled.div``,
+
+  Title: Styled.h1`
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+    background: linear-gradient(135deg, #10b981, #059669);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  `,
+
+  Subtitle: Styled.p`
+    font-size: 14px;
+    color: #94a3b8;
     margin: 0;
   `,
-  ButtonGroup: Styled.div`
+
+  HeaderRight: Styled.div`
     display: flex;
-    gap: 10px;
+    align-items: center;
+    gap: 16px;
   `,
+
+  ViewToggle: Styled.div`
+    display: flex;
+    background: rgba(15, 23, 42, 0.6);
+    border-radius: 8px;
+    padding: 4px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  `,
+
+  ViewButton: Styled.button<{ active: boolean }>`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: ${(props) => (props.active ? '#10b981' : 'transparent')};
+    color: ${(props) => (props.active ? '#ffffff' : '#94a3b8')};
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: ${(props) => (props.active ? '#059669' : 'rgba(148, 163, 184, 0.1)')};
+    }
+  `,
+
+  GridIcon: Styled.div`
+    width: 16px;
+    height: 16px;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 3h7v7H3V3zm0 11h7v7H3v-7zm11-11h7v7h-7V3zm0 11h7v7h-7v-7z'/%3E%3C/svg%3E") no-repeat center;
+    mask-size: contain;
+  `,
+
+  ListIcon: Styled.div`
+    width: 16px;
+    height: 16px;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zm0-8h14V7H7v2z'/%3E%3C/svg%3E") no-repeat center;
+    mask-size: contain;
+  `,
+
   RefreshButton: Styled.button`
-    background: none;
-    border: none;
-    color: ${(props) => props.theme.colors.notice};
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-weight: 300;
-    font-size: 20px;
-    cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 5px;
-    margin-left: 5px;
+    width: 40px;
+    height: 40px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.6);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.2s ease;
 
     &:hover {
-      color: ${(props) => (props.disabled ? props.theme.colors.notice : props.theme.colors.emerald)};
+      background: rgba(16, 185, 129, 0.1);
+      border-color: #10b981;
+      color: #10b981;
     }
   `,
-  ClearCacheButton: Styled.button`
-    background: none;
-    border: none;
-    color: ${(props) => props.theme.colors.notice};
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-weight: 300;
-    font-size: 20px;
-    cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+
+  RefreshIcon: Styled.div`
+    width: 18px;
+    height: 18px;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z'/%3E%3C/svg%3E") no-repeat center;
+    mask-size: contain;
+  `,
+
+  // Stats Bar
+  StatsBar: Styled.div`
+    display: flex;
+    gap: 24px;
+    padding: 16px 32px;
+    background: rgba(15, 23, 42, 0.4);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  `,
+
+  StatItem: Styled.div`
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 5px;
+    gap: 8px;
+  `,
 
-    &:hover {
-      color: ${(props) => (props.disabled ? props.theme.colors.notice : '#ff6b6b')};
-    }
+  StatIcon: Styled.span`
+    font-size: 16px;
   `,
-  CacheStatus: Styled.div`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    margin-bottom: 15px;
-    padding: 8px 12px;
-    background: ${(props) => props.theme.colors.hunter};
-    border-radius: 8px;
-    border: 1px solid ${(props) => props.theme.colors.hunter};
+
+  StatText: Styled.span`
+    font-size: 14px;
+    color: #94a3b8;
   `,
-  DiskSpaceInfo: Styled.div`
-    color: ${(props) => props.theme.colors.emerald};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    margin-bottom: 15px;
-    padding: 8px 12px;
-    background: ${(props) => props.theme.colors.hunter};
-    border-radius: 8px;
-    border: 1px solid ${(props) => props.theme.colors.emerald};
+
+  // Controls Section
+  Controls: Styled.div`
+    display: flex;
+    gap: 16px;
+    padding: 20px 32px;
+    background: rgba(15, 23, 42, 0.6);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   `,
-  CurrentModelInfo: Styled.div`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    margin-bottom: 15px;
-    padding: 8px 12px;
-    background: ${(props) => props.theme.colors.hunter};
-    border-radius: 8px;
-    border: 1px solid ${(props) => props.theme.colors.notice};
+
+  SearchContainer: Styled.div`
+    position: relative;
+    flex: 1;
   `,
+
+  SearchIcon: Styled.div`
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    background: #94a3b8;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E") no-repeat center;
+    mask-size: contain;
+  `,
+
   SearchInput: Styled.input`
     width: 100%;
-    height: 40px;
-    border-radius: 20px;
-    padding: 0 20px;
-    background: ${(props) => props.theme.colors.core};
-    border: 2px solid ${(props) => props.theme.colors.hunter};
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    margin-bottom: 20px;
+    height: 44px;
+    padding: 0 16px 0 48px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.8);
+    color: #e2e8f0;
+    font-size: 14px;
+    transition: all 0.2s ease;
+
+    &::placeholder {
+      color: #64748b;
+    }
 
     &:focus {
       outline: none;
-      border-color: ${(props) => props.theme.colors.emerald};
+      border-color: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
     }
   `,
-  LoadingMessage: Styled.div`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    text-align: center;
-    padding: 20px;
-  `,
-  ErrorMessage: Styled.div`
-    color: #ff6b6b;
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    text-align: center;
-    padding: 20px;
-  `,
-  ModelsList: Styled.div`
+
+  SortContainer: Styled.div`
     display: flex;
-    flex-direction: column;
-    gap: 15px;
-    overflow-y: auto;
+    align-items: center;
+    gap: 8px;
+  `,
+
+  SortLabel: Styled.span`
+    font-size: 14px;
+    color: #94a3b8;
+  `,
+
+  SortSelect: Styled.select`
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.8);
+    color: #e2e8f0;
+    font-size: 14px;
+    cursor: pointer;
+
+    &:focus {
+      outline: none;
+      border-color: #10b981;
+    }
+  `,
+
+  // Error State
+  ErrorContainer: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 32px;
+    padding: 16px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+  `,
+
+  ErrorIcon: Styled.span`
+    font-size: 20px;
+  `,
+
+  ErrorText: Styled.span`
     flex: 1;
+    color: #fca5a5;
   `,
-  EmptyMessage: Styled.div`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    text-align: center;
-    padding: 20px;
-  `,
-  ModelCard: Styled.div`
-    background: ${(props) => props.theme.colors.hunter};
-    border-radius: 12px;
-    padding: 20px;
-    border: 1px solid ${(props) => props.theme.colors.hunter};
+
+  RetryButton: Styled.button`
+    padding: 8px 16px;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+    cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 
     &:hover {
-      border-color: ${(props) => props.theme.colors.emerald};
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-      transform: translateY(-1px);
+      background: rgba(239, 68, 68, 0.2);
     }
   `,
-  ModelHeader: Styled.div`
+
+  // Models Container
+  ModelsContainer: Styled.div<{ viewMode: 'grid' | 'list' }>`
+    flex: 1;
+    padding: 20px 32px;
+    overflow-y: auto;
+    display: ${(props) => (props.viewMode === 'grid' ? 'grid' : 'flex')};
+    ${(props) =>
+      props.viewMode === 'grid'
+        ? `
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+    `
+        : `
+      flex-direction: column;
+      gap: 12px;
+    `}
+  `,
+
+  // Model Card
+  ModelCard: Styled.div<{ viewMode: 'grid' | 'list' }>`
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 12px;
+    padding: ${(props) => (props.viewMode === 'grid' ? '20px' : '16px')};
+    transition: all 0.2s ease;
+    ${(props) =>
+      props.viewMode === 'list'
+        ? `
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    `
+        : ''}
+
+    &:hover {
+      border-color: rgba(16, 185, 129, 0.3);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      transform: translateY(-2px);
+    }
+  `,
+
+  ModelCardHeader: Styled.div`
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
+    align-items: flex-start;
+    margin-bottom: 12px;
   `,
+
   ModelInfo: Styled.div`
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    flex: 1;
   `,
+
   ModelName: Styled.h3`
-    color: ${(props) => props.theme.colors.emerald};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.medium};
+    font-size: 18px;
     font-weight: 600;
-    margin: 0;
+    color: #f1f5f9;
+    margin: 0 0 4px 0;
   `,
+
   ModelSize: Styled.span`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    font-weight: 500;
-    background: ${(props) => props.theme.colors.core};
+    font-size: 14px;
+    color: #94a3b8;
+    background: rgba(148, 163, 184, 0.1);
     padding: 4px 8px;
     border-radius: 6px;
-    border: 1px solid ${(props) => props.theme.colors.notice};
   `,
+
+  ModelStatus: Styled.div``,
+
+  InstalledBadge: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+  `,
+
+  CheckIcon: Styled.span`
+    font-size: 12px;
+  `,
+
   ModelDescription: Styled.p`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    margin: 0 0 10px 0;
-    line-height: 1.4;
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0 0 12px 0;
   `,
+
   ModelTags: Styled.div`
     display: flex;
     flex-wrap: wrap;
-    gap: 5px;
-    margin-bottom: 15px;
+    gap: 6px;
+    margin-bottom: 16px;
   `,
-  Tag: Styled.span`
-    background: ${(props) => props.theme.colors.core};
-    color: ${(props) => props.theme.colors.emerald};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    font-weight: 500;
-    padding: 4px 10px;
-    border-radius: 16px;
-    border: 1px solid ${(props) => props.theme.colors.emerald};
-    transition: all 0.2s ease;
 
-    &:hover {
-      background: ${(props) => props.theme.colors.emerald};
-      color: ${(props) => props.theme.colors.core};
-    }
-  `,
-  ModelStatus: Styled.div`
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  `,
-  InstalledBadge: Styled.span`
-    background: ${(props) => props.theme.colors.emerald};
-    color: ${(props) => props.theme.colors.core};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
+  Tag: Styled.span`
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    font-size: 12px;
+    font-weight: 500;
     padding: 4px 8px;
     border-radius: 12px;
-    border: 1px solid ${(props) => props.theme.colors.emerald};
+    border: 1px solid rgba(16, 185, 129, 0.2);
   `,
-  ModelFooter: Styled.div`
+
+  TagMore: Styled.span`
+    background: rgba(148, 163, 184, 0.1);
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  `,
+
+  ModelCardFooter: Styled.div`
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 15px;
   `,
-  SpaceInfo: Styled.div`
+
+  SpaceIndicator: Styled.div``,
+
+  SpaceSuccess: Styled.div`
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 4px;
+    color: #10b981;
+    font-size: 12px;
+    font-weight: 500;
   `,
-  SpaceCheck: Styled.div`
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    text-align: right;
-  `,
-  SpaceSuccess: Styled.span`
-    color: #4ade80;
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-  `,
-  SpaceError: Styled.span`
+
+  SpaceError: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 4px;
     color: #f87171;
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
+    font-size: 12px;
+    font-weight: 500;
   `,
+
+  SpaceIcon: Styled.span`
+    font-size: 12px;
+  `,
+
   ActionButtons: Styled.div`
     display: flex;
-    gap: 10px;
+    gap: 8px;
   `,
+
   PullButton: Styled.button`
-    background: ${(props) => (props.disabled ? props.theme.colors.hunter : props.theme.colors.emerald)};
-    color: ${(props) => props.theme.colors.core};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
+    padding: 8px 16px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    font-size: 12px;
     font-weight: 500;
-    padding: 10px 20px;
-    border-radius: 8px;
-    border: none;
-    cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+    cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
-    &:hover {
-      background: ${(props) => (props.disabled ? props.theme.colors.hunter : props.theme.colors.notice)};
-      transform: ${(props) => (props.disabled ? 'none' : 'translateY(-1px)')};
-      box-shadow: ${(props) => (props.disabled ? '0 2px 4px rgba(0, 0, 0, 0.1)' : '0 4px 8px rgba(0, 0, 0, 0.15)')};
+    &:hover:not(:disabled) {
+      background: rgba(16, 185, 129, 0.2);
     }
 
-    &:active {
-      transform: ${(props) => (props.disabled ? 'none' : 'translateY(0)')};
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
   `,
+
   ReplaceButton: Styled.button`
-    background: ${(props) => (props.disabled ? props.theme.colors.hunter : '#f59e0b')};
-    color: ${(props) => props.theme.colors.core};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
+    padding: 8px 16px;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    font-size: 12px;
     font-weight: 500;
-    padding: 10px 20px;
-    border-radius: 8px;
-    border: none;
-    cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+    cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
-    &:hover {
-      background: ${(props) => (props.disabled ? props.theme.colors.hunter : '#d97706')};
-      transform: ${(props) => (props.disabled ? 'none' : 'translateY(-1px)')};
-      box-shadow: ${(props) => (props.disabled ? '0 2px 4px rgba(0, 0, 0, 0.1)' : '0 4px 8px rgba(0, 0, 0, 0.15)')};
+    &:hover:not(:disabled) {
+      background: rgba(245, 158, 11, 0.2);
     }
 
-    &:active {
-      transform: ${(props) => (props.disabled ? 'none' : 'translateY(0)')};
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
+  `,
+
+  // Loading State
+  LoadingState: Styled.div`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+  `,
+
+  LoadingSpinner: Styled.div`
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(148, 163, 184, 0.2);
+    border-top: 3px solid #10b981;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `,
+
+  LoadingText: Styled.div`
+    color: #94a3b8;
+    font-size: 16px;
+  `,
+
+  // Empty State
+  EmptyState: Styled.div`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    text-align: center;
+  `,
+
+  EmptyIcon: Styled.div`
+    font-size: 48px;
+    opacity: 0.5;
+  `,
+
+  EmptyTitle: Styled.h3`
+    font-size: 20px;
+    color: #94a3b8;
+    margin: 0;
+  `,
+
+  EmptyText: Styled.p`
+    color: #64748b;
+    font-size: 14px;
+    margin: 0;
   `,
 };
 
