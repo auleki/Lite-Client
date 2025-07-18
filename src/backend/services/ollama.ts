@@ -532,3 +532,55 @@ export const getDiskSpaceInfo = async () => {
     };
   }
 };
+
+// Function to get the currently loaded model
+export const getCurrentModel = async () => {
+  try {
+    const allModels = await ollama.list();
+    // Return the first model that's currently loaded (if any)
+    return allModels.models.find((m) => m.parameter_size) || null;
+  } catch (err) {
+    logger.error('Failed to get current model:', err);
+    return null;
+  }
+};
+
+// Function to delete a model
+export const deleteModel = async (modelName: string) => {
+  try {
+    await ollama.delete({ model: modelName });
+    logger.info(`Successfully deleted model: ${modelName}`);
+    return true;
+  } catch (err) {
+    logger.error(`Failed to delete model ${modelName}:`, err);
+    return false;
+  }
+};
+
+// Function to pull and replace current model
+export const pullAndReplaceModel = async (newModelName: string) => {
+  try {
+    // Get current model
+    const currentModel = await getCurrentModel();
+
+    // Pull the new model first
+    await sendOllamaStatusToRenderer(`Pulling new model: ${newModelName}`);
+    await installModelWithStatus(newModelName);
+
+    // If there was a current model, delete it to save space
+    if (currentModel) {
+      await sendOllamaStatusToRenderer(`Deleting old model: ${currentModel.name} to save space`);
+      await deleteModel(currentModel.name);
+    }
+
+    // Initialize the new model
+    await sendOllamaStatusToRenderer(`Initializing new model: ${newModelName}`);
+    await ollama.chat({ model: newModelName });
+
+    logger.info(`Successfully replaced model: ${currentModel?.name || 'none'} -> ${newModelName}`);
+    return true;
+  } catch (err) {
+    logger.error(`Failed to pull and replace model ${newModelName}:`, err);
+    return false;
+  }
+};

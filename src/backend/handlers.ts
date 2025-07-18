@@ -12,6 +12,9 @@ import {
   getRegistryCacheStatus,
   checkDiskSpaceForModel,
   getDiskSpaceInfo,
+  getCurrentModel,
+  deleteModel,
+  pullAndReplaceModel,
 } from './services/ollama';
 import { OllamaQuestion } from './types';
 import { saveModelPathToStorage, getModelPathFromStorage } from './storage';
@@ -137,6 +140,33 @@ export const getDiskSpaceInfoHandler = async () => {
     return await getDiskSpaceInfo();
   } catch (error) {
     logger.error('Error getting disk space info:', error);
+    throw error;
+  }
+};
+
+export const getCurrentModelHandler = async () => {
+  try {
+    return await getCurrentModel();
+  } catch (error) {
+    logger.error('Error getting current model:', error);
+    throw error;
+  }
+};
+
+export const deleteModelHandler = async (_: any, modelName: string) => {
+  try {
+    return await deleteModel(modelName);
+  } catch (error) {
+    logger.error('Error deleting model:', error);
+    throw error;
+  }
+};
+
+export const pullAndReplaceModelHandler = async (_: any, modelName: string) => {
+  try {
+    return await pullAndReplaceModel(modelName);
+  } catch (error) {
+    logger.error('Error pulling and replacing model:', error);
     throw error;
   }
 };

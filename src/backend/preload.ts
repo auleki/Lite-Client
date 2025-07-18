@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('backendBridge', {
     checkDiskSpaceForModel: (modelSize: number) =>
       ipcRenderer.invoke(OllamaChannel.OllamaCheckDiskSpaceForModel, modelSize),
     getDiskSpaceInfo: () => ipcRenderer.invoke(OllamaChannel.OllamaGetDiskSpaceInfo),
+    getCurrentModel: () => ipcRenderer.invoke(OllamaChannel.OllamaGetCurrentModel),
+    deleteModel: (modelName: string) =>
+      ipcRenderer.invoke(OllamaChannel.OllamaDeleteModel, modelName),
+    pullAndReplaceModel: (modelName: string) =>
+      ipcRenderer.invoke(OllamaChannel.OllamaPullAndReplaceModel, modelName),
   },
   removeAllListeners(channel: string) {
     ipcRenderer.removeAllListeners(channel);

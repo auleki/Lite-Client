@@ -13,6 +13,8 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cacheStatus, setCacheStatus] = useState<CacheStatus | null>(null);
   const [diskSpaceInfo, setDiskSpaceInfo] = useState<DiskSpaceInfo | null>(null);
+  const [currentModel, setCurrentModel] = useState<any>(null);
+  const [isReplacing, setIsReplacing] = useState(false);
 
   const loadRegistryModels = async (forceRefresh = false) => {
     setIsLoading(true);
@@ -31,6 +33,10 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
       // Load disk space info
       const diskInfo = await window.backendBridge.ollama.getDiskSpaceInfo();
       setDiskSpaceInfo(diskInfo);
+
+      // Load current model
+      const current = await window.backendBridge.ollama.getCurrentModel();
+      setCurrentModel(current);
     } catch (err) {
       setError('Failed to load models from registry. Please check your internet connection.');
       console.error('Error loading registry models:', err);
@@ -59,6 +65,21 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
   const handleModelPull = (modelName: string) => {
     if (onModelPull) {
       onModelPull(modelName);
+    }
+  };
+
+  const handlePullAndReplace = async (modelName: string) => {
+    setIsReplacing(true);
+    try {
+      const success = await window.backendBridge.ollama.pullAndReplaceModel(modelName);
+      if (success) {
+        // Reload data to reflect changes
+        await loadRegistryModels();
+      }
+    } catch (err) {
+      console.error('Failed to pull and replace model:', err);
+    } finally {
+      setIsReplacing(false);
     }
   };
 
@@ -112,6 +133,12 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
         <Registry.DiskSpaceInfo>
           💾 Disk Space: {diskSpaceInfo.freeGB}GB free of {diskSpaceInfo.totalGB}GB total
         </Registry.DiskSpaceInfo>
+      )}
+
+      {currentModel && (
+        <Registry.CurrentModelInfo>
+          🎯 Current Model: {currentModel.name} ({currentModel.parameter_size})
+        </Registry.CurrentModelInfo>
       )}
 
       <Registry.SearchInput
@@ -170,15 +197,26 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
                       )}
                     </Registry.SpaceCheck>
                   )}
-                  <Registry.PullButton
-                    onClick={() => handleModelPull(model.name)}
-                    disabled={
-                      model.isInstalled ||
-                      (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false)
-                    }
-                  >
-                    {model.isInstalled ? 'Installed' : 'Pull Model'}
-                  </Registry.PullButton>
+                  <Registry.ButtonGroup>
+                    <Registry.PullButton
+                      onClick={() => handleModelPull(model.name)}
+                      disabled={
+                        model.isInstalled ||
+                        (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
+                        isReplacing
+                      }
+                    >
+                      {model.isInstalled ? 'Installed' : 'Pull Model'}
+                    </Registry.PullButton>
+                    {currentModel && currentModel.name !== model.name && (
+                      <Registry.ReplaceButton
+                        onClick={() => handlePullAndReplace(model.name)}
+                        disabled={isReplacing}
+                      >
+                        {isReplacing ? 'Replacing...' : 'Pull & Replace'}
+                      </Registry.ReplaceButton>
+                    )}
+                  </Registry.ButtonGroup>
                 </Registry.ModelActions>
               </Registry.ModelCard>
             ))
@@ -268,6 +306,16 @@ const Registry = {
     background: ${(props) => props.theme.colors.hunter};
     border-radius: 8px;
     border: 1px solid ${(props) => props.theme.colors.emerald};
+  `,
+  CurrentModelInfo: Styled.div`
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.small};
+    margin-bottom: 15px;
+    padding: 8px 12px;
+    background: ${(props) => props.theme.colors.hunter};
+    border-radius: 8px;
+    border: 1px solid ${(props) => props.theme.colors.notice};
   `,
   SearchInput: Styled.input`
     width: 100%;
@@ -383,6 +431,21 @@ const Registry = {
 
     &:hover {
       background: ${(props) => (props.disabled ? props.theme.colors.hunter : props.theme.colors.notice)};
+    }
+  `,
+  ReplaceButton: Styled.button`
+    background: ${(props) => (props.disabled ? props.theme.colors.hunter : '#f59e0b')};
+    color: ${(props) => props.theme.colors.core};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.small};
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: none;
+    cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+    transition: background-color 0.2s;
+
+    &:hover {
+      background: ${(props) => (props.disabled ? props.theme.colors.hunter : '#d97706')};
     }
   `,
 };

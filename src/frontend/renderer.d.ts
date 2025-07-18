@@ -42,6 +42,9 @@ export interface BackendBridge {
     getRegistryCacheStatus: () => Promise<CacheStatus>;
     checkDiskSpaceForModel: (modelSize: number) => Promise<DiskSpaceForModel>;
     getDiskSpaceInfo: () => Promise<DiskSpaceInfo>;
+    getCurrentModel: () => Promise<any>;
+    deleteModel: (modelName: string) => Promise<boolean>;
+    pullAndReplaceModel: (modelName: string) => Promise<boolean>;
   };
   removeAllListeners: (channel: string) => void;
 }
