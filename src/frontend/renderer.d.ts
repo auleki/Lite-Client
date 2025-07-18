@@ -1,5 +1,24 @@
 import { ChatResponse, GenerateResponse, ListResponse, ModelResponse } from 'ollama';
 
+export interface DiskSpaceInfo {
+  free: number;
+  freeGB: string;
+  total: number;
+  totalGB: string;
+  used: number;
+  usedGB: string;
+  error?: any;
+}
+
+export interface DiskSpaceForModel {
+  hasEnoughSpace: boolean;
+  freeSpace: number;
+  freeSpaceGB: string;
+  requiredSpaceGB: string;
+  modelSize: number;
+  error?: any;
+}
+
 export interface BackendBridge {
   main: {
     init: () => Promise<boolean>;
@@ -21,6 +40,8 @@ export interface BackendBridge {
     forceRefreshRegistry: () => Promise<RegistryModel[]>;
     clearRegistryCache: () => Promise<boolean>;
     getRegistryCacheStatus: () => Promise<CacheStatus>;
+    checkDiskSpaceForModel: (modelSize: number) => Promise<DiskSpaceForModel>;
+    getDiskSpaceInfo: () => Promise<DiskSpaceInfo>;
   };
   removeAllListeners: (channel: string) => void;
 }

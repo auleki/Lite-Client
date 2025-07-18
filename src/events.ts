@@ -17,6 +17,8 @@ export enum OllamaChannel {
   OllamaForceRefreshRegistry = 'ollama:forcerefreshregistry',
   OllamaClearRegistryCache = 'ollama:clearregistrycache',
   OllamaGetRegistryCacheStatus = 'ollama:getregistrycachestatus',
+  OllamaCheckDiskSpaceForModel = 'ollama:check-disk-space-for-model',
+  OllamaGetDiskSpaceInfo = 'ollama:get-disk-space-info',
 }
 
 export enum IpcMainChannel {

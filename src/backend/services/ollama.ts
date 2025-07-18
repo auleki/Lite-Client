@@ -5,6 +5,7 @@ import fs from 'fs';
 import { sendOllamaStatusToRenderer } from '..';
 import { MOR_PROMPT } from './prompts';
 import path from 'path';
+import checkDiskSpace from 'check-disk-space';
 
 // events
 import { IpcMainChannel } from '../../events';
@@ -473,3 +474,61 @@ const POPULAR_MODELS = [
     isInstalled: false,
   },
 ];
+
+// Function to check if there's enough disk space for a model
+export const checkDiskSpaceForModel = async (modelSize: number) => {
+  try {
+    const appDataPath = app.getPath('userData');
+    const diskSpace = await checkDiskSpace(appDataPath);
+
+    const hasEnoughSpace = diskSpace.free > modelSize;
+    const freeSpaceGB = (diskSpace.free / (1024 * 1024 * 1024)).toFixed(2);
+    const requiredSpaceGB = (modelSize / (1024 * 1024 * 1024)).toFixed(2);
+
+    return {
+      hasEnoughSpace,
+      freeSpace: diskSpace.free,
+      freeSpaceGB,
+      requiredSpaceGB,
+      modelSize,
+    };
+  } catch (err) {
+    logger.error('Failed to check disk space:', err);
+    return {
+      hasEnoughSpace: false,
+      freeSpace: 0,
+      freeSpaceGB: '0',
+      requiredSpaceGB: '0',
+      modelSize,
+      error: err,
+    };
+  }
+};
+
+// Function to get disk space information for display
+export const getDiskSpaceInfo = async () => {
+  try {
+    const appDataPath = app.getPath('userData');
+    const diskSpace = await checkDiskSpace(appDataPath);
+
+    return {
+      free: diskSpace.free,
+      freeGB: (diskSpace.free / (1024 * 1024 * 1024)).toFixed(2),
+      total: diskSpace.size,
+      totalGB: (diskSpace.size / (1024 * 1024 * 1024)).toFixed(2),
+      used: diskSpace.size - diskSpace.free,
+      usedGB: ((diskSpace.size - diskSpace.free) / (1024 * 1024 * 1024)).toFixed(2),
+    };
+  } catch (err) {
+    logger.error('Failed to get disk space info:', err);
+    return {
+      free: 0,
+      freeGB: '0',
+      total: 0,
+      totalGB: '0',
+      used: 0,
+      usedGB: '0',
+      error: err,
+    };
+  }
+};

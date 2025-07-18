@@ -10,9 +10,12 @@ import {
   getAvailableModelsFromRegistry,
   clearRegistryCache,
   getRegistryCacheStatus,
+  checkDiskSpaceForModel,
+  getDiskSpaceInfo,
 } from './services/ollama';
 import { OllamaQuestion } from './types';
 import { saveModelPathToStorage, getModelPathFromStorage } from './storage';
+import { logger } from './services/logger';
 
 export const initOllama = async (_: Electron.IpcMainEvent) => {
   try {
@@ -117,6 +120,24 @@ export const getRegistryCacheStatusHandler = async (_: Electron.IpcMainEvent) =>
   } catch (err) {
     handleError(err);
     return { hasCache: false, age: null, isExpired: true };
+  }
+};
+
+export const checkDiskSpaceForModelHandler = async (_: any, modelSize: number) => {
+  try {
+    return await checkDiskSpaceForModel(modelSize);
+  } catch (error) {
+    logger.error('Error checking disk space for model:', error);
+    throw error;
+  }
+};
+
+export const getDiskSpaceInfoHandler = async () => {
+  try {
+    return await getDiskSpaceInfo();
+  } catch (error) {
+    logger.error('Error getting disk space info:', error);
+    throw error;
   }
 };
 

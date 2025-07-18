@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('backendBridge', {
     forceRefreshRegistry: () => invokeNoParam<any[]>(OllamaChannel.OllamaForceRefreshRegistry),
     clearRegistryCache: () => invokeNoParam<boolean>(OllamaChannel.OllamaClearRegistryCache),
     getRegistryCacheStatus: () => invokeNoParam<any>(OllamaChannel.OllamaGetRegistryCacheStatus),
+    checkDiskSpaceForModel: (modelSize: number) =>
+      ipcRenderer.invoke(OllamaChannel.OllamaCheckDiskSpaceForModel, modelSize),
+    getDiskSpaceInfo: () => ipcRenderer.invoke(OllamaChannel.OllamaGetDiskSpaceInfo),
   },
   removeAllListeners(channel: string) {
     ipcRenderer.removeAllListeners(channel);
