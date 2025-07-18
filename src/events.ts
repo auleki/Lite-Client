@@ -13,6 +13,10 @@ export enum OllamaChannel {
   OllamaQuestion = 'ollama:question',
   OllamaAnswer = 'ollama:answer',
   OllamaGetModel = 'ollama:getmodel',
+  OllamaGetAvailableModelsFromRegistry = 'ollama:getavailablemodelsfromregistry',
+  OllamaForceRefreshRegistry = 'ollama:forcerefreshregistry',
+  OllamaClearRegistryCache = 'ollama:clearregistrycache',
+  OllamaGetRegistryCacheStatus = 'ollama:getregistrycachestatus',
 }
 
 export enum IpcMainChannel {

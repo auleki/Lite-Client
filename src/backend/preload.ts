@@ -28,6 +28,11 @@ contextBridge.exposeInMainWorld('backendBridge', {
     getAllModels: () => invokeNoParam<ListResponse>(OllamaChannel.OllamaGetAllModels),
     getModel: (model: string) =>
       invoke<string[], ModelResponse>(OllamaChannel.OllamaGetModel, model),
+    getAvailableModelsFromRegistry: () =>
+      invokeNoParam<any[]>(OllamaChannel.OllamaGetAvailableModelsFromRegistry),
+    forceRefreshRegistry: () => invokeNoParam<any[]>(OllamaChannel.OllamaForceRefreshRegistry),
+    clearRegistryCache: () => invokeNoParam<boolean>(OllamaChannel.OllamaClearRegistryCache),
+    getRegistryCacheStatus: () => invokeNoParam<any>(OllamaChannel.OllamaGetRegistryCacheStatus),
   },
   removeAllListeners(channel: string) {
     ipcRenderer.removeAllListeners(channel);

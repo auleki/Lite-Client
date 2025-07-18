@@ -114,7 +114,7 @@ const ChatView = (): JSX.Element => {
     }
 
     switch (action.type.toLowerCase()) {
-      case 'balance':
+      case 'balance': {
         let message: string;
         try {
           message = await handleBalanceRequest(provider, account);
@@ -123,8 +123,9 @@ const ChatView = (): JSX.Element => {
         }
         updateDialogueEntries(question, message);
         break;
+      }
 
-      case 'transfer':
+      case 'transfer': {
         try {
           const builtTx = await handleTransactionRequest(provider, action, account, question);
           console.log('from: ' + builtTx.params[0].from);
@@ -146,6 +147,7 @@ const ChatView = (): JSX.Element => {
           updateDialogueEntries(question, badTransactionMessage);
         }
         break;
+      }
 
       case 'address':
         updateDialogueEntries(question, account);

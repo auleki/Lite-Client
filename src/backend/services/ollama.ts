@@ -4,6 +4,7 @@ import { execFile, ChildProcess } from 'child_process';
 import fs from 'fs';
 import { sendOllamaStatusToRenderer } from '..';
 import { MOR_PROMPT } from './prompts';
+import path from 'path';
 
 // events
 import { IpcMainChannel } from '../../events';
@@ -21,6 +22,45 @@ import { logger } from './logger';
 
 // constants
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434/';
+
+// Cache configuration
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+
+// In-memory cache
+let registryCache: {
+  data: any[];
+  timestamp: number;
+} | null = null;
+
+// Persistent cache functions
+const saveCacheToStorage = (data: any[]) => {
+  try {
+    const cacheData = {
+      data,
+      timestamp: Date.now(),
+    };
+    const cachePath = path.join(app.getPath('userData'), 'cache.json');
+    fs.writeFileSync(cachePath, JSON.stringify(cacheData));
+    logger.info('Cache saved to persistent storage');
+  } catch (err) {
+    logger.error('Failed to save cache to storage:', err);
+  }
+};
+
+const loadCacheFromStorage = () => {
+  try {
+    const cachePath = path.join(app.getPath('userData'), 'cache.json');
+    if (fs.existsSync(cachePath)) {
+      const cacheData = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      registryCache = cacheData;
+      logger.info('Cache loaded from persistent storage');
+      return true;
+    }
+  } catch (err) {
+    logger.error('Failed to load cache from storage:', err);
+  }
+  return false;
+};
 
 // commands
 export const SERVE_OLLAMA_CMD = 'ollama serve';
@@ -207,4 +247,86 @@ export const stopOllama = async () => {
 
   ollamaProcess.removeAllListeners();
   ollamaProcess = null;
+};
+
+// New function to fetch models from Ollama registry with caching
+export const getAvailableModelsFromRegistry = async (forceRefresh = false) => {
+  try {
+    // Load from persistent storage if in-memory cache is empty
+    if (!registryCache) {
+      loadCacheFromStorage();
+    }
+
+    // Check cache first (unless force refresh is requested)
+    if (!forceRefresh && registryCache && Date.now() - registryCache.timestamp < CACHE_DURATION) {
+      logger.info('Returning cached registry data');
+      return registryCache.data;
+    }
+
+    logger.info('Fetching fresh data from Ollama registry');
+    const response = await fetch('https://ollama.com/api/tags');
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch registry: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Transform the data to match our expected format
+    const models =
+      data.models?.map((model: any) => ({
+        name: model.name,
+        description: model.details?.description || '',
+        size: model.size,
+        modifiedAt: model.modified_at,
+        digest: model.digest,
+        tags: model.details?.families || [],
+        isInstalled: false, // Will be computed by comparing with local models
+      })) || [];
+
+    // Update cache
+    registryCache = {
+      data: models,
+      timestamp: Date.now(),
+    };
+
+    // Save to persistent storage
+    saveCacheToStorage(models);
+
+    logger.info(`Fetched ${models.length} models from registry and cached`);
+    return models;
+  } catch (err) {
+    logger.error('Failed to fetch models from registry:', err);
+
+    // Return cached data if available (even if expired) as fallback
+    if (registryCache) {
+      logger.info('Returning stale cached data as fallback');
+      return registryCache.data;
+    }
+
+    throw err;
+  }
+};
+
+// Function to clear cache (useful for testing or manual refresh)
+export const clearRegistryCache = () => {
+  registryCache = null;
+  logger.info('Registry cache cleared');
+};
+
+// Function to get cache status
+export const getRegistryCacheStatus = () => {
+  if (!registryCache) {
+    return { hasCache: false, age: null, isExpired: true };
+  }
+
+  const age = Date.now() - registryCache.timestamp;
+  const isExpired = age > CACHE_DURATION;
+
+  return {
+    hasCache: true,
+    age: age,
+    isExpired: isExpired,
+    cacheDuration: CACHE_DURATION,
+  };
 };

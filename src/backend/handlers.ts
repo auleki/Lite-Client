@@ -7,6 +7,9 @@ import {
   getAllLocalModels,
   askOllama,
   getOrPullModel,
+  getAvailableModelsFromRegistry,
+  clearRegistryCache,
+  getRegistryCacheStatus,
 } from './services/ollama';
 import { OllamaQuestion } from './types';
 import { saveModelPathToStorage, getModelPathFromStorage } from './storage';
@@ -72,6 +75,49 @@ export const setModelFolderPath = async (_: Electron.IpcMainEvent) => {
   }
 
   return true;
+};
+
+// New handler for registry models
+export const getAvailableModelsFromRegistryHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const models = await getAvailableModelsFromRegistry();
+    return models;
+  } catch (err) {
+    handleError(err);
+    return [];
+  }
+};
+
+// New handler for force refresh (bypasses cache)
+export const forceRefreshRegistryHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const models = await getAvailableModelsFromRegistry(true);
+    return models;
+  } catch (err) {
+    handleError(err);
+    return [];
+  }
+};
+
+// New handler for cache management
+export const clearRegistryCacheHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    clearRegistryCache();
+    return true;
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+};
+
+// New handler for cache status
+export const getRegistryCacheStatusHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    return getRegistryCacheStatus();
+  } catch (err) {
+    handleError(err);
+    return { hasCache: false, age: null, isExpired: true };
+  }
 };
 
 const handleError = (err: Error) => {

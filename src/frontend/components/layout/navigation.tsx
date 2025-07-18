@@ -14,6 +14,12 @@ const MainNavigation = () => {
   return (
     <TopNav.Layout>
       <TopNav.MainNavButton icon={<TopNav.ChatIcon />} text="chat" href="/chat" exact={true} />
+      <TopNav.MainNavButton
+        icon={<TopNav.RegistryIcon />}
+        text="registry"
+        href="/registry"
+        exact={true}
+      />
       {/* <TopNav.MainNavButton icon={<TopNav.HomeIcon />} text="home" href="/" exact={true} /> */}
       <TopNav.MainNavButton
         icon={<TopNav.SettingsIcon />}
@@ -56,6 +62,19 @@ const TopNav = {
     display: flex;
     width: 50px;
     height: 50px;
+  `,
+  RegistryIcon: Styled.div`
+    display: flex;
+    width: 50px;
+    height: 50px;
+    background: ${(props) => props.theme.colors.emerald};
+    border-radius: 8px;
+    align-items: center;
+    justify-content: center;
+    color: ${(props) => props.theme.colors.core};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: 20px;
+    font-weight: bold;
   `,
 };
 
