@@ -5,9 +5,14 @@ import { RegistryModel, CacheStatus, DiskSpaceInfo } from '../renderer.d';
 interface RegistryModelsProps {
   onModelPull?: (modelName: string) => void;
   isPulling?: string | null;
+  onCancelPull?: () => void;
 }
 
-const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling }) => {
+const RegistryModels: React.FC<RegistryModelsProps> = ({
+  onModelPull,
+  isPulling,
+  onCancelPull,
+}) => {
   const [registryModels, setRegistryModels] = useState<RegistryModel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +25,7 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling 
   const [sortBy, setSortBy] = useState<'name' | 'size' | 'popularity'>('name');
   const [pullStatus, setPullStatus] = useState<string>('');
   const [pullProgress, setPullProgress] = useState<number>(0);
+  const [canCancel, setCanCancel] = useState<boolean>(true);
 
   const loadRegistryModels = async (forceRefresh = false) => {
     setIsLoading(true);
@@ -65,12 +71,19 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling 
 
   const handleModelPull = (modelName: string) => {
     if (onModelPull) {
+      setCanCancel(true);
+      setPullProgress(0);
+      setPullStatus('Starting download...');
       onModelPull(modelName);
     }
   };
 
   const handlePullAndReplace = async (modelName: string) => {
     setIsReplacing(true);
+    setCanCancel(true);
+    setPullProgress(0);
+    setPullStatus('Starting replacement...');
+
     try {
       const success = await window.backendBridge.ollama.pullAndReplaceModel(modelName);
       if (success) {
@@ -81,6 +94,32 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling 
       console.error('Failed to pull and replace model:', err);
     } finally {
       setIsReplacing(false);
+      setCanCancel(false);
+      setPullProgress(0);
+      setPullStatus('');
+    }
+  };
+
+  const handleCancelOperation = () => {
+    if (canCancel) {
+      // Ask for confirmation before cancelling
+      const confirmed = window.confirm(
+        'Are you sure you want to cancel this operation? The download will be stopped and no model will be installed.',
+      );
+
+      if (confirmed) {
+        // Reset local state
+        setIsReplacing(false);
+        setCanCancel(false);
+        setPullProgress(0);
+        setPullStatus('');
+        console.log('Operation cancelled by user');
+
+        // Notify parent component to reset isPulling state
+        if (onCancelPull) {
+          onCancelPull();
+        }
+      }
     }
   };
 
@@ -193,6 +232,18 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull, isPulling 
             <Registry.StatusText>{pullStatus || 'Initializing...'}</Registry.StatusText>
 
             <Registry.PullSpinner />
+
+            {canCancel && (
+              <Registry.CancelButton onClick={handleCancelOperation}>
+                Cancel Operation
+              </Registry.CancelButton>
+            )}
+
+            {canCancel && (
+              <Registry.CancelWarning>
+                ⚠️ Cancelling will stop the download. The new model will not be installed.
+              </Registry.CancelWarning>
+            )}
           </Registry.PullModal>
         </Registry.PullOverlay>
       )}
@@ -979,6 +1030,36 @@ const Registry = {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+  `,
+
+  CancelButton: Styled.button`
+    padding: 12px 24px;
+    border: 2px solid rgba(239, 68, 68, 0.5);
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 10px;
+
+    &:hover {
+      background: rgba(239, 68, 68, 0.25);
+      border-color: rgba(239, 68, 68, 0.7);
+      transform: translateY(-1px);
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+  `,
+
+  CancelWarning: Styled.p`
+    font-size: 12px;
+    color: #fca5a5;
+    margin-top: 10px;
+    text-align: center;
   `,
 };
 

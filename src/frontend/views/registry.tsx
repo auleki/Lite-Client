@@ -26,7 +26,18 @@ const RegistryView: React.FC = (): JSX.Element => {
     }
   };
 
-  return <RegistryModels onModelPull={handleModelPull} isPulling={isPulling} />;
+  const handleCancelPull = () => {
+    setIsPulling(null);
+    console.log('Pull operation cancelled');
+  };
+
+  return (
+    <RegistryModels
+      onModelPull={handleModelPull}
+      isPulling={isPulling}
+      onCancelPull={handleCancelPull}
+    />
+  );
 };
 
 export default RegistryView;
