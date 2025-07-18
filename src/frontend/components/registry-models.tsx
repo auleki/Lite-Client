@@ -164,8 +164,15 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
             filteredModels.map((model) => (
               <Registry.ModelCard key={model.name}>
                 <Registry.ModelHeader>
-                  <Registry.ModelName>{model.name}</Registry.ModelName>
-                  <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
+                  <Registry.ModelInfo>
+                    <Registry.ModelName>{model.name}</Registry.ModelName>
+                    <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
+                  </Registry.ModelInfo>
+                  <Registry.ModelStatus>
+                    {model.isInstalled && (
+                      <Registry.InstalledBadge>✓ Installed</Registry.InstalledBadge>
+                    )}
+                  </Registry.ModelStatus>
                 </Registry.ModelHeader>
 
                 {model.description && (
@@ -180,24 +187,27 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
                   </Registry.ModelTags>
                 )}
 
-                <Registry.ModelActions>
-                  {diskSpaceInfo && (
-                    <Registry.SpaceCheck>
-                      {diskSpaceInfo.free > model.size ? (
-                        <span style={{ color: '#4ade80' }}>✓ Enough space</span>
-                      ) : (
-                        <span style={{ color: '#f87171' }}>
-                          ✗ Need{' '}
-                          {(
-                            model.size / (1024 * 1024 * 1024) -
-                            parseFloat(diskSpaceInfo.freeGB)
-                          ).toFixed(1)}
-                          GB more
-                        </span>
-                      )}
-                    </Registry.SpaceCheck>
-                  )}
-                  <Registry.ButtonGroup>
+                <Registry.ModelFooter>
+                  <Registry.SpaceInfo>
+                    {diskSpaceInfo && (
+                      <Registry.SpaceCheck>
+                        {diskSpaceInfo.free > model.size ? (
+                          <Registry.SpaceSuccess>✓ Enough space</Registry.SpaceSuccess>
+                        ) : (
+                          <Registry.SpaceError>
+                            ✗ Need{' '}
+                            {(
+                              model.size / (1024 * 1024 * 1024) -
+                              parseFloat(diskSpaceInfo.freeGB)
+                            ).toFixed(1)}
+                            GB more
+                          </Registry.SpaceError>
+                        )}
+                      </Registry.SpaceCheck>
+                    )}
+                  </Registry.SpaceInfo>
+
+                  <Registry.ActionButtons>
                     <Registry.PullButton
                       onClick={() => handleModelPull(model.name)}
                       disabled={
@@ -216,8 +226,8 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({ onModelPull }) => {
                         {isReplacing ? 'Replacing...' : 'Pull & Replace'}
                       </Registry.ReplaceButton>
                     )}
-                  </Registry.ButtonGroup>
-                </Registry.ModelActions>
+                  </Registry.ActionButtons>
+                </Registry.ModelFooter>
               </Registry.ModelCard>
             ))
           )}
@@ -364,9 +374,17 @@ const Registry = {
   `,
   ModelCard: Styled.div`
     background: ${(props) => props.theme.colors.hunter};
-    border-radius: 10px;
-    padding: 15px;
+    border-radius: 12px;
+    padding: 20px;
     border: 1px solid ${(props) => props.theme.colors.hunter};
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+    &:hover {
+      border-color: ${(props) => props.theme.colors.emerald};
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transform: translateY(-1px);
+    }
   `,
   ModelHeader: Styled.div`
     display: flex;
@@ -374,16 +392,27 @@ const Registry = {
     align-items: center;
     margin-bottom: 10px;
   `,
+  ModelInfo: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  `,
   ModelName: Styled.h3`
     color: ${(props) => props.theme.colors.emerald};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
+    font-size: ${(props) => props.theme.fonts.size.medium};
+    font-weight: 600;
     margin: 0;
   `,
   ModelSize: Styled.span`
     color: ${(props) => props.theme.colors.notice};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: ${(props) => props.theme.fonts.size.small};
+    font-weight: 500;
+    background: ${(props) => props.theme.colors.core};
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid ${(props) => props.theme.colors.notice};
   `,
   ModelDescription: Styled.p`
     color: ${(props) => props.theme.colors.notice};
@@ -403,34 +432,82 @@ const Registry = {
     color: ${(props) => props.theme.colors.emerald};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: ${(props) => props.theme.fonts.size.small};
-    padding: 2px 8px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 16px;
+    border: 1px solid ${(props) => props.theme.colors.emerald};
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: ${(props) => props.theme.colors.emerald};
+      color: ${(props) => props.theme.colors.core};
+    }
+  `,
+  ModelStatus: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  `,
+  InstalledBadge: Styled.span`
+    background: ${(props) => props.theme.colors.emerald};
+    color: ${(props) => props.theme.colors.core};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.small};
+    padding: 4px 8px;
     border-radius: 12px;
     border: 1px solid ${(props) => props.theme.colors.emerald};
   `,
-  ModelActions: Styled.div`
+  ModelFooter: Styled.div`
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-items: flex-end;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 15px;
+  `,
+  SpaceInfo: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 10px;
   `,
   SpaceCheck: Styled.div`
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: ${(props) => props.theme.fonts.size.small};
     text-align: right;
   `,
+  SpaceSuccess: Styled.span`
+    color: #4ade80;
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.small};
+  `,
+  SpaceError: Styled.span`
+    color: #f87171;
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.small};
+  `,
+  ActionButtons: Styled.div`
+    display: flex;
+    gap: 10px;
+  `,
   PullButton: Styled.button`
     background: ${(props) => (props.disabled ? props.theme.colors.hunter : props.theme.colors.emerald)};
     color: ${(props) => props.theme.colors.core};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: ${(props) => props.theme.fonts.size.small};
-    padding: 8px 16px;
-    border-radius: 20px;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 8px;
     border: none;
     cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
     &:hover {
       background: ${(props) => (props.disabled ? props.theme.colors.hunter : props.theme.colors.notice)};
+      transform: ${(props) => (props.disabled ? 'none' : 'translateY(-1px)')};
+      box-shadow: ${(props) => (props.disabled ? '0 2px 4px rgba(0, 0, 0, 0.1)' : '0 4px 8px rgba(0, 0, 0, 0.15)')};
+    }
+
+    &:active {
+      transform: ${(props) => (props.disabled ? 'none' : 'translateY(0)')};
     }
   `,
   ReplaceButton: Styled.button`
@@ -438,14 +515,22 @@ const Registry = {
     color: ${(props) => props.theme.colors.core};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: ${(props) => props.theme.fonts.size.small};
-    padding: 8px 16px;
-    border-radius: 20px;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 8px;
     border: none;
     cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 
     &:hover {
       background: ${(props) => (props.disabled ? props.theme.colors.hunter : '#d97706')};
+      transform: ${(props) => (props.disabled ? 'none' : 'translateY(-1px)')};
+      box-shadow: ${(props) => (props.disabled ? '0 2px 4px rgba(0, 0, 0, 0.1)' : '0 4px 8px rgba(0, 0, 0, 0.15)')};
+    }
+
+    &:active {
+      transform: ${(props) => (props.disabled ? 'none' : 'translateY(0)')};
     }
   `,
 };
