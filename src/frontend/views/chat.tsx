@@ -19,7 +19,9 @@ import { ActionParams } from '../utils/types';
 import { getChainInfoByChainId } from '../utils/chain';
 
 const ChatView = (): JSX.Element => {
-  const [selectedModel, setSelectedModel] = useState('llama2');
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [dialogueEntries, setDialogueEntries] = useAIMessagesContext();
   const [inputValue, setInputValue] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState<AIMessage>();
@@ -30,6 +32,54 @@ const ChatView = (): JSX.Element => {
 
   const chatMainRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+
+  // Load available models on component mount
+  useEffect(() => {
+    loadAvailableModels();
+  }, []);
+
+  // Load saved model preference
+  useEffect(() => {
+    const savedModel = localStorage.getItem('selectedModel');
+    if (savedModel && availableModels.includes(savedModel)) {
+      setSelectedModel(savedModel);
+    }
+  }, [availableModels]);
+
+  // Save model preference when it changes
+  useEffect(() => {
+    if (selectedModel) {
+      localStorage.setItem('selectedModel', selectedModel);
+    }
+  }, [selectedModel]);
+
+  const loadAvailableModels = async () => {
+    setIsLoadingModels(true);
+    try {
+      const models = await window.backendBridge.ollama.getAvailableModels();
+      setAvailableModels(models);
+      // Set the first available model as default if none is selected
+      if (models.length > 0 && !selectedModel) {
+        setSelectedModel(models[0]);
+      } else if (models.length === 0) {
+        // Show error message if no models are available
+        updateDialogueEntries('', 'No models available. Please install at least one Ollama model.');
+      }
+    } catch (error) {
+      console.error('Failed to load available models:', error);
+      setAvailableModels([]);
+      updateDialogueEntries('', 'Failed to load models. Please check if Ollama is running.');
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
+
+  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedValue = e.target.value;
+    if (selectedValue) {
+      setSelectedModel(selectedValue);
+    }
+  };
 
   useEffect(() => {
     window.backendBridge.ollama.onAnswer((response) => {
@@ -114,7 +164,7 @@ const ChatView = (): JSX.Element => {
     }
 
     switch (action.type.toLowerCase()) {
-      case 'balance':
+      case 'balance': {
         let message: string;
         try {
           message = await handleBalanceRequest(provider, account);
@@ -123,8 +173,9 @@ const ChatView = (): JSX.Element => {
         }
         updateDialogueEntries(question, message);
         break;
+      }
 
-      case 'transfer':
+      case 'transfer': {
         try {
           const builtTx = await handleTransactionRequest(provider, action, account, question);
           console.log('from: ' + builtTx.params[0].from);
@@ -146,20 +197,29 @@ const ChatView = (): JSX.Element => {
           updateDialogueEntries(question, badTransactionMessage);
         }
         break;
+      }
 
-      case 'address':
+      case 'address': {
         updateDialogueEntries(question, account);
         break;
+      }
 
-      default:
+      default: {
         // If the transaction type is not recognized, we will not proceed with the transaction.
         const errorMessage = `Error: Invalid transaction type: ${action.type}`;
         updateDialogueEntries(question, errorMessage);
+      }
     }
   };
 
   const handleQuestionAsked = async (question: string) => {
     if (isOllamaBeingPolled) {
+      return;
+    }
+
+    // Validate that a model is selected
+    if (!selectedModel) {
+      updateDialogueEntries(question, 'Please select a model before asking a question.');
       return;
     }
 
@@ -183,7 +243,14 @@ const ChatView = (): JSX.Element => {
       const { response, action: action } = parseResponse(inference.message.content);
 
       if (response == 'error') {
-        updateDialogueEntries(question, 'Sorry, I had a problem with your request.');
+        // If JSON parsing failed, try to display the raw response
+        const rawContent = inference.message.content.trim();
+        if (rawContent && rawContent.length > 0) {
+          // Display the raw response if it's not empty
+          updateDialogueEntries(question, rawContent);
+        } else {
+          updateDialogueEntries(question, 'Sorry, I had a problem with your request.');
+        }
       } else {
         await processResponse(question, response, action);
       }
@@ -241,6 +308,23 @@ const ChatView = (): JSX.Element => {
         <option value="0xa4b1">Arbitrum</option>
         <option value="0x64">Gnosis</option>
       </Chat.Dropdown>
+      <Chat.ModelControlsWrapper>
+        <Chat.ModelDropdown
+          onChange={handleModelChange}
+          value={selectedModel}
+          disabled={isLoadingModels}
+        >
+          <option value="">{isLoadingModels ? 'Loading models...' : 'Select a model'}</option>
+          {availableModels.map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </Chat.ModelDropdown>
+        <Chat.RefreshButton onClick={loadAvailableModels} disabled={isLoadingModels}>
+          {isLoadingModels ? '...' : '↻'}
+        </Chat.RefreshButton>
+      </Chat.ModelControlsWrapper>
       <Chat.Main ref={chatMainRef}>
         {dialogueEntries.map((entry, index) => {
           return (
@@ -399,6 +483,52 @@ const Chat = {
       option {
         background-color: ${(props) => props.theme.colors.core};
         color: ${(props) => props.theme.colors.emerald};
+      }
+    `,
+  ModelControlsWrapper: Styled.div`
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+      justify-content: center;
+      padding: 10px;
+    `,
+  ModelDropdown: Styled.select`
+      padding: 8px 10px;
+      border-radius: 10px;
+      background-color: ${(props) => props.theme.colors.core}; 
+      color: ${(props) => props.theme.colors.notice}; 
+      border: 2px solid ${(props) => props.theme.colors.hunter}; 
+      font-family: ${(props) => props.theme.fonts.family.primary.regular};
+      font-size: ${(props) => props.theme.fonts.size.small};
+      cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+      min-width: 200px;
+
+      &:hover {
+        border: 2px solid ${(props) => (props.disabled ? props.theme.colors.hunter : props.theme.colors.emerald)};
+      }
+
+      option {
+        background-color: ${(props) => props.theme.colors.core};
+        color: ${(props) => props.theme.colors.emerald};
+      }
+    `,
+  RefreshButton: Styled.button`
+      background: none;
+      border: none;
+      color: ${(props) => props.theme.colors.notice};
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-weight: ${(props) => props.theme.fonts.family.primary.light};
+      font-size: 20px;
+      cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px;
+      margin-left: 5px;
+
+      &:hover {
+        color: ${(props) => (props.disabled ? props.theme.colors.notice : props.theme.colors.emerald)};
       }
     `,
 };

@@ -71,14 +71,14 @@ const AppRoot = () => {
     const ollamaInit = await window.backendBridge.ollama.init();
 
     if (ollamaInit) {
-      const model = await window.backendBridge.ollama.getModel('llama2');
+      // Check for available models instead of hardcoding 'llama2'
+      const availableModels = await window.backendBridge.ollama.getAvailableModels();
 
-      if (model) {
+      if (availableModels && availableModels.length > 0) {
         setIsInitialized(true);
-
         return;
       } else {
-        console.error(`Something went wrong with pulling model ${'llama2'}`);
+        console.error('No models available. Please install at least one model.');
       }
     }
 

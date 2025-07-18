@@ -10,6 +10,7 @@ export enum OllamaChannel {
   OllamaInit = 'ollama:init',
   OllamaStatusUpdate = 'ollama:status',
   OllamaGetAllModels = 'ollama:getallmodels',
+  OllamaGetAvailableModels = 'ollama:getavailablemodels',
   OllamaQuestion = 'ollama:question',
   OllamaAnswer = 'ollama:answer',
   OllamaGetModel = 'ollama:getmodel',

@@ -152,7 +152,7 @@ export const askOllama = async (model: string, message: string) => {
       },
       {
         role: 'user',
-        content: `Answer the following query in a valid formatted JSON object without comments with both the response and action fields deduced from the user's question. Adhere strictly to JSON syntax without comments. Query: ${message}. Response: { "response":`,
+        content: `Answer the following query in a valid formatted JSON object without comments with both the response and action fields deduced from the user's question. Adhere strictly to JSON syntax without comments. Query: ${message}`,
       },
     ],
   });
@@ -196,6 +196,16 @@ export const findModel = async (model: string) => {
 
 export const getAllLocalModels = async () => {
   return await ollama.list();
+};
+
+export const getAvailableModels = async () => {
+  try {
+    const models = await ollama.list();
+    return models.models.map((model) => model.name);
+  } catch (err) {
+    logger.error('Failed to get available models:', err);
+    return [];
+  }
 };
 
 export const stopOllama = async () => {

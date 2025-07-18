@@ -5,6 +5,7 @@ import {
   loadOllama,
   stopOllama,
   getAllLocalModels,
+  getAvailableModels,
   askOllama,
   getOrPullModel,
 } from './services/ollama';
@@ -55,6 +56,16 @@ export const askOlama = async (_: Electron.IpcMainEvent, { model, query }: Ollam
     return response;
   } catch (err) {
     handleError(err);
+  }
+};
+
+export const getAvailableModelsHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const models = await getAvailableModels();
+    return models;
+  } catch (err) {
+    handleError(err);
+    return [];
   }
 };
 

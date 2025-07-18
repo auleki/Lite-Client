@@ -4,6 +4,7 @@ import { IpcChannel, IpcMainChannel, OllamaChannel } from '../events';
 import {
   initOllama,
   getAllModels,
+  getAvailableModelsHandler,
   askOlama,
   getModel,
   setModelFolderPath,
@@ -58,6 +59,7 @@ app.on('ready', async () => {
 
   ipcMain.handle(OllamaChannel.OllamaInit, initOllama);
   ipcMain.handle(OllamaChannel.OllamaGetAllModels, getAllModels);
+  ipcMain.handle(OllamaChannel.OllamaGetAvailableModels, getAvailableModelsHandler);
   ipcMain.handle(OllamaChannel.OllamaQuestion, askOlama);
   ipcMain.handle(OllamaChannel.OllamaGetModel, getModel);
 

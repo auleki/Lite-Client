@@ -13,11 +13,15 @@ export interface ITheme {
   fonts: {
     family: {
       primary: {
+        light: string;
         regular: string;
+        medium: string;
         bold: string;
       };
       secondary: {
+        light: string;
         regular: string;
+        medium: string;
         bold: string;
       };
     };
@@ -58,12 +62,16 @@ export const lightTheme: ITheme = {
     ...common.fonts,
     family: {
       primary: {
-        regular: 'Roboto Regular',
-        bold: 'Roboto Bold',
+        light: '300',
+        regular: '400',
+        medium: '500',
+        bold: '700',
       },
       secondary: {
-        regular: 'Montserrat Regular',
-        bold: 'Montserrat Bold',
+        light: '300',
+        regular: '400',
+        medium: '500',
+        bold: '700',
       },
     },
   },
@@ -76,12 +84,16 @@ export const darkTheme: ITheme = {
     ...common.fonts,
     family: {
       primary: {
-        regular: 'Roboto Regular',
-        bold: 'Roboto Bold',
+        light: '300',
+        regular: '400',
+        medium: '500',
+        bold: '700',
       },
       secondary: {
-        regular: 'Montserrat Regular',
-        bold: 'Montserrat Bold',
+        light: '300',
+        regular: '400',
+        medium: '500',
+        bold: '700',
       },
     },
   },

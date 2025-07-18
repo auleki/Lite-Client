@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('backendBridge', {
     onAnswer: (callback: (response: ChatResponse) => void) =>
       ipcRenderer.on(OllamaChannel.OllamaAnswer, (_, response) => callback(response)),
     getAllModels: () => invokeNoParam<ListResponse>(OllamaChannel.OllamaGetAllModels),
+    getAvailableModels: () => invokeNoParam<string[]>(OllamaChannel.OllamaGetAvailableModels),
     getModel: (model: string) =>
       invoke<string[], ModelResponse>(OllamaChannel.OllamaGetModel, model),
   },

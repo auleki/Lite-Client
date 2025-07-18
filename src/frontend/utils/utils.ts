@@ -3,21 +3,33 @@ import { ModelResponse } from './types';
 
 export const parseResponse = (jsonString: string) => {
   // Assert the type of the parsed object.
-  console.log(jsonString);
+  console.log('Raw response from AI:', jsonString);
 
-  // uses regex to remove comments that llama sometimes includes in the JSON string
-  // ranges from // to the end of the line or the end of the string
-  // jsonString = jsonString.replace(/(?<!\\)\/\/.*?(?=\n|$)/gm, '');
-  let parsed: string;
+  // Clean the response string - remove any leading/trailing whitespace
+  const cleanedString = jsonString.trim();
+
+  // Try to extract JSON from the response if it's not pure JSON
+  const jsonStart = cleanedString.indexOf('{');
+  const jsonEnd = cleanedString.lastIndexOf('}');
+
+  let jsonToParse = cleanedString;
+  if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+    jsonToParse = cleanedString.substring(jsonStart, jsonEnd + 1);
+  }
+
+  let parsed: any;
   try {
-    parsed = JSON.parse(jsonString);
+    parsed = JSON.parse(jsonToParse);
   } catch (error) {
-    new Error('Ollama error');
+    console.error('Failed to parse JSON response:', error);
+    console.error('Attempted to parse:', jsonToParse);
     return { response: 'error', action: {} };
   }
+
   if (isModelResponse(parsed)) {
     return { response: parsed.response, action: parsed.action };
   } else {
+    console.error('Invalid ModelResponse format:', parsed);
     throw new Error('Invalid ModelResponse format');
   }
 };

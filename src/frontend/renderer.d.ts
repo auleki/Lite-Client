@@ -16,9 +16,15 @@ export interface BackendBridge {
     question: ({ model, question }: OllamaQuestion) => Promise<ChatResponse>;
     onAnswer: (callback: (response: ChatResponse) => void) => Electron.IpcRenderer;
     getAllModels: () => Promise<ListResponse>;
+    getAvailableModels: () => Promise<string[]>;
     getModel: (model: string) => Promise<ModelResponse>;
   };
   removeAllListeners: (channel: string) => void;
+}
+
+export interface OllamaQuestion {
+  model: string;
+  query: string;
 }
 
 declare global {
