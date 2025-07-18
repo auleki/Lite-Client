@@ -48,15 +48,13 @@ const config: ForgeConfig = {
 
       const filePath = `src/executables/${platformFile}`;
 
+      // Just set permissions on the source files - no need to copy anymore
       platform !== 'win32'
         ? exec(`chmod +x ${filePath}`)
         : fs.chmodSync(filePath, 755);
-
-      fs.mkdirSync('executables');
-      fs.copyFileSync(filePath, `executables/${platformFile}`);
     },
     postPackage: async () => {
-      fs.rmSync('executables', { recursive: true, force: true });
+      // No longer need to clean up executables directory since we use source files directly
     }
   },
   rebuildConfig: {},
@@ -64,16 +62,16 @@ const config: ForgeConfig = {
     new MakerSquirrel({
       setupIcon: 'src/frontend/assets/images/circle-mor-logo.ico',
     }),
-    new MakerZIP({}, ['darwin']),
-    new MakerRpm({}),
-    new MakerDeb({
-      options: {
-        icon: 'src/frontend/assets/images/MOR_logo_circle.iconset/icon_512x512.png',
-        maintainer: 'Morpheus',
-        homepage: 'https://www.mor.org',
-        categories: ['Utility'],
-      },
-    }),
+    new MakerZIP({}, ['darwin', 'linux']),
+    // new MakerRpm({}), // Commented out - requires rpmbuild which isn't available on macOS
+    // new MakerDeb({  // Commented out - requires dpkg/fakeroot which aren't available on macOS
+    //   options: {
+    //     icon: 'src/frontend/assets/images/MOR_logo_circle.iconset/icon_512x512.png',
+    //     maintainer: 'Morpheus',
+    //     homepage: 'https://www.mor.org',
+    //     categories: ['Utility'],
+    //   },
+    // }),
     new MakerDMG({
       icon: 'src/frontend/assets/images/circle-mor-logo.icns',
       format: 'ULFO',
@@ -93,7 +91,7 @@ const config: ForgeConfig = {
     new PublisherGithub({
       repository: {
         owner: 'MorpheusAIs',
-        name: 'Node',
+        name: 'Lite-Client',
       },
       draft: true,
     }),
