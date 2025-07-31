@@ -17,7 +17,7 @@ import {
 import { parseResponse } from '../utils/utils';
 import { ActionParams } from '../utils/types';
 
-const ChatView = (): JSX.Element => {
+const ChatView = (): React.JSX.Element => {
   const [selectedModel] = useState('llama2');
   const [dialogueEntries, setDialogueEntries] = useAIMessagesContext();
   const [inputValue, setInputValue] = useState('');

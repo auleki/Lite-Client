@@ -3,7 +3,7 @@ import Styled from 'styled-components';
 import { TailSpin } from 'react-loader-spinner';
 import { useNavigate } from 'react-router-dom';
 
-const HomeView = (): JSX.Element => {
+const HomeView = (): React.JSX.Element => {
   const navigate = useNavigate();
   const [ollamaStatus, setOllamaStatus] = useState<string>('Checking Ollama status...');
   const [isOllamaConnected, setIsOllamaConnected] = useState<boolean>(false);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Styled from 'styled-components';
 
-const SettingsView = (): JSX.Element => {
+const SettingsView = (): React.JSX.Element => {
   const [ollamaPath, setOllamaPath] = useState<string>('');
   const [modelsPath, setModelsPath] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -10,10 +10,9 @@ const SettingsView = (): JSX.Element => {
     const loadSettings = async () => {
       try {
         // Load current settings
-        const currentOllamaPath = await window.backendBridge.ollama.getOllamaPath();
-        const currentModelsPath = await window.backendBridge.ollama.getModelsPath();
+        const currentModelsPath = await window.backendBridge.main.getFolderPath();
 
-        setOllamaPath(currentOllamaPath || 'Default');
+        setOllamaPath('Default'); // Ollama path is not configurable in this version
         setModelsPath(currentModelsPath || 'Default');
       } catch (error) {
         console.error('Failed to load settings:', error);
@@ -27,12 +26,12 @@ const SettingsView = (): JSX.Element => {
 
   const handleResetSettings = async () => {
     try {
-      await window.backendBridge.ollama.resetSettings();
+      // Reset settings by setting folder path to default
+      await window.backendBridge.main.setFolderPath();
       // Reload settings
-      const currentOllamaPath = await window.backendBridge.ollama.getOllamaPath();
-      const currentModelsPath = await window.backendBridge.ollama.getModelsPath();
+      const currentModelsPath = await window.backendBridge.main.getFolderPath();
 
-      setOllamaPath(currentOllamaPath || 'Default');
+      setOllamaPath('Default');
       setModelsPath(currentModelsPath || 'Default');
     } catch (error) {
       console.error('Failed to reset settings:', error);

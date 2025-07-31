@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import RegistryModels from '../components/registry-models';
 
-const RegistryView: React.FC = (): JSX.Element => {
+const RegistryView: React.FC = (): React.JSX.Element => {
   const [isPulling, setIsPulling] = useState<string | null>(null);
 
   const handleModelPull = async (modelName: string) => {
