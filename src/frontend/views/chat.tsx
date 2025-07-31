@@ -16,17 +16,14 @@ import {
 } from '../utils/transaction';
 import { parseResponse } from '../utils/utils';
 import { ActionParams } from '../utils/types';
-import { getChainInfoByChainId } from '../utils/chain';
 
 const ChatView = (): JSX.Element => {
-  const [selectedModel, setSelectedModel] = useState('llama2');
+  const [selectedModel] = useState('llama2');
   const [dialogueEntries, setDialogueEntries] = useAIMessagesContext();
   const [inputValue, setInputValue] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState<AIMessage>();
   const [isOllamaBeingPolled, setIsOllamaBeingPolled] = useState(false);
-  const { ready, sdk, connected, connecting, provider, chainId, account, balance } = useSDK();
-  const ethInWei = '1000000000000000000';
-  const [selectedNetwork, setSelectedNetwork] = useState('');
+  const { provider, account } = useSDK();
 
   const chatMainRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
@@ -200,97 +197,72 @@ const ChatView = (): JSX.Element => {
     setInputValue(e.currentTarget.value);
   };
 
-  const handleNetworkChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedChain = e.target.value;
-
-    // Check if the default option is selected
-    if (!selectedChain) {
-      console.log('No network selected.');
-      return; // Early return to avoid further execution
-    }
-
-    // Sanity Checks:
-    if (!account || !provider) {
-      const errorMessage = `Error: Please connect to MetaMask`;
-      updateDialogueEntries('', errorMessage);
-      return;
-    }
-
-    try {
-      const response = await provider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: selectedChain }],
-      });
-      console.log(response);
-    } catch (error) {
-      //if switch chain fails then add the chain
-      try {
-        const chainInfo = getChainInfoByChainId(selectedChain);
-        const response = await provider.request({
-          method: 'wallet_addEthereumChain',
-          params: [chainInfo],
-        });
-      } catch (error) {
-        console.error('Failed to switch networks:', error);
-      }
-    }
-  };
-
   return (
     <Chat.Layout>
-      <Chat.Dropdown onChange={handleNetworkChange} value="">
-        <option value="">Select a network</option>
-        <option value="0x1">Ethereum</option>
-        <option value="0xaa36a7">Sepolia</option>
-        <option value="0xa4b1">Arbitrum</option>
-        <option value="0x64">Gnosis</option>
-      </Chat.Dropdown>
       <Chat.Main ref={chatMainRef}>
+        {dialogueEntries.length === 0 && (
+          <Chat.WelcomeMessage>
+            <Chat.WelcomeIcon>🤖</Chat.WelcomeIcon>
+            <Chat.WelcomeTitle>Welcome to Morpheus</Chat.WelcomeTitle>
+            <Chat.WelcomeText>How can I help you today?</Chat.WelcomeText>
+          </Chat.WelcomeMessage>
+        )}
+
         {dialogueEntries.map((entry, index) => {
           return (
-            <Chat.QuestionWrapper
-              key={`dialogue-${index}`}
-              style={{ display: 'flex', flexDirection: 'column' }}
-            >
-              {entry.question && <Chat.Question>{`> ${entry.question}`}</Chat.Question>}
-              {entry.answer && <Chat.Answer>{entry.answer}</Chat.Answer>}
-            </Chat.QuestionWrapper>
+            <Chat.MessageWrapper key={`dialogue-${index}`}>
+              {entry.question && (
+                <Chat.UserMessage>
+                  <Chat.MessageContent isUser={true}>{entry.question}</Chat.MessageContent>
+                </Chat.UserMessage>
+              )}
+              {entry.answer && (
+                <Chat.AIMessage>
+                  <Chat.MessageContent isUser={false}>{entry.answer}</Chat.MessageContent>
+                </Chat.AIMessage>
+              )}
+            </Chat.MessageWrapper>
           );
         })}
+
         {currentQuestion && (
-          <Chat.QuestionWrapper>
-            <Chat.Question>{`> ${currentQuestion.question}`}</Chat.Question>
-            <Chat.Answer>
-              <Chat.PollingIndicator width="30" height="20" />
-            </Chat.Answer>
-          </Chat.QuestionWrapper>
+          <Chat.MessageWrapper>
+            <Chat.UserMessage>
+              <Chat.MessageContent isUser={true}>{currentQuestion.question}</Chat.MessageContent>
+            </Chat.UserMessage>
+            <Chat.AIMessage>
+              <Chat.ThinkingIndicator>
+                <Chat.PollingIndicator width="20" height="20" />
+                <Chat.ThinkingText>Morpheus is thinking...</Chat.ThinkingText>
+              </Chat.ThinkingIndicator>
+            </Chat.AIMessage>
+          </Chat.MessageWrapper>
         )}
       </Chat.Main>
-      <Chat.Bottom>
+
+      <Chat.InputContainer>
         <Chat.InputWrapper>
-          <Chat.Arrow>&gt;</Chat.Arrow>
           <Chat.Input
             ref={chatInputRef}
             disabled={isOllamaBeingPolled}
             value={inputValue}
             onChange={handleQuestionChange}
+            placeholder="Message Morpheus..."
             onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
                 handleQuestionAsked(inputValue);
               }
             }}
           />
-          <Chat.SubmitButton
-            disabled={isOllamaBeingPolled || !inputValue}
+          <Chat.SendButton
+            disabled={isOllamaBeingPolled || !inputValue.trim()}
             onClick={() => handleQuestionAsked(inputValue)}
-          />
+          >
+            <Chat.SendIcon>→</Chat.SendIcon>
+          </Chat.SendButton>
         </Chat.InputWrapper>
-      </Chat.Bottom>
-      {/* <div onClick={() => handleQuestionAsked('How much is 5 times 5?')}>Ask Olama</div>
-
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {currentQuestion && <span style={{ backgroundColor: 'yellow' }}>{currentQuestion}</span>}
-      </div> */}
+      </Chat.InputContainer>
     </Chat.Layout>
   );
 };
@@ -306,105 +278,150 @@ const Chat = {
   Main: Styled.div`
     display: flex;
     width: 100%;
-    height: 80%;
+    flex: 1;
     flex-direction: column;
     padding: 20px;
-    margin-bottom: 20px;
-    overflow: scroll;
+    overflow-y: auto;
+    max-width: 800px;
+    margin: 0 auto;
   `,
-  QuestionWrapper: Styled.div`
+  WelcomeMessage: Styled.div`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.medium};
+  `,
+  WelcomeIcon: Styled.span`
+    font-size: 60px;
+    margin-bottom: 20px;
+  `,
+  WelcomeTitle: Styled.h2`
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.bold};
+    font-size: 2rem;
+    margin-bottom: 10px;
+  `,
+  WelcomeText: Styled.p`
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: 1.1rem;
+    margin: 0;
+    opacity: 0.8;
+  `,
+  MessageWrapper: Styled.div`
     display: flex;
     flex-direction: column;
     margin-bottom: 20px;
   `,
-  Question: Styled.span`
-    color: ${(props) => props.theme.colors.notice};
+  UserMessage: Styled.div`
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+  `,
+  AIMessage: Styled.div`
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 10px;
+  `,
+  MessageContent: Styled.div<{ isUser?: boolean }>`
+    display: inline-block;
+    padding: 12px 16px;
+    border-radius: 18px;
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: ${(props) => props.theme.fonts.size.small};
     word-wrap: break-word;
-    margin-bottom: 5px;
+    max-width: 70%;
+    line-height: 1.4;
+    background: ${(props) => (props.isUser ? props.theme.colors.emerald : props.theme.colors.hunter)};
+    color: ${(props) => (props.isUser ? props.theme.colors.core : props.theme.colors.notice)};
   `,
-  Answer: Styled.span`
+  ThinkingIndicator: Styled.div`
     display: flex;
-    color: ${(props) => props.theme.colors.emerald};
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: ${(props) => props.theme.colors.hunter};
+    border-radius: 18px;
+    color: ${(props) => props.theme.colors.notice};
+  `,
+  ThinkingText: Styled.span`
+    color: ${(props) => props.theme.colors.notice};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: ${(props) => props.theme.fonts.size.small};
-    margin-left: 20px;
   `,
   PollingIndicator: Styled(ThreeDots)`
     display: flex;
   `,
-  Bottom: Styled.div`
+  InputContainer: Styled.div`
     display: flex;
-    width: 100%;
-    height: 20%;
+    flex-direction: column;
+    padding: 20px;
     background: ${(props) => props.theme.colors.core};
-    justify-content: center;
+    border-top: 1px solid ${(props) => props.theme.colors.hunter};
+    gap: 15px;
   `,
   InputWrapper: Styled.div`
     display: flex;
-    width: 90%;
-    height: 40px;
-    position: relative;
     align-items: center;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+    position: relative;
   `,
   Input: Styled.input`
     display: flex;
     width: 100%;
-    height: 40px;
-    border-radius: 30px;
-    padding: 0 40px 0 25px;
-    background: ${(props) => props.theme.colors.core};
+    height: 50px;
+    border-radius: 25px;
+    padding: 0 60px 0 20px;
+    background: ${(props) => props.theme.colors.hunter};
     border: 2px solid ${(props) => props.theme.colors.hunter};
     color: ${(props) => props.theme.colors.notice};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
+    font-size: ${(props) => props.theme.fonts.size.medium};
+    outline: none;
+    transition: border-color 0.2s ease;
+
+    &:focus {
+      border-color: ${(props) => props.theme.colors.emerald};
+    }
+
+    &::placeholder {
+      color: ${(props) => props.theme.colors.notice};
+      opacity: 0.6;
+    }
   `,
-  Arrow: Styled.span`
+  SendButton: Styled.button`
     display: flex;
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.small};
-    position: absolute;
-    left: 10px;
-  `,
-  SubmitButton: Styled.button`
-    display: flex;
-    width: 30px;
-    height: 30px;
-    border-radius: 25px;
-    background: ${(props) => props.theme.colors.hunter};
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: ${(props) => props.theme.colors.emerald};
     position: absolute;
     right: 5px;
     cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
     border: none;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
 
     &:hover {
-      background: ${(props) => (props.disabled ? props.theme.colors.hunter : props.theme.colors.emerald)};
+      background: ${(props) => (props.disabled ? props.theme.colors.emerald : props.theme.colors.hunter)};
+      transform: ${(props) => (props.disabled ? 'none' : 'scale(1.05)')};
     }
   `,
-  Dropdown: Styled.select`
-      position: absolute;
-      top: 42px;
-      left: 25px;
-      padding: 8px 10px;
-      border-radius: 10px;
-      background-color: ${(props) => props.theme.colors.core}; 
-      color: ${(props) => props.theme.colors.notice}; 
-      border: 2px solid ${(props) => props.theme.colors.hunter}; 
-      font-family: ${(props) => props.theme.fonts.family.primary.regular};
-      font-size: ${(props) => props.theme.fonts.size.small};
-      cursor:  pointer;
-
-      &:hover {
-        border: 2px solid ${(props) => props.theme.colors.emerald};
-      }
-
-      option {
-        background-color: ${(props) => props.theme.colors.core};
-        color: ${(props) => props.theme.colors.emerald};
-      }
-    `,
+  SendIcon: Styled.span`
+    display: flex;
+    color: white;
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: 1.2rem;
+    font-weight: bold;
+  `,
 };
 
 export default ChatView;

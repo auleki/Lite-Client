@@ -30,7 +30,7 @@ export interface BackendBridge {
     minimize: () => void;
   };
   ollama: {
-    init: (result: boolean) => Promise<boolean>;
+    init: () => Promise<boolean>;
     onStatusUpdate: (callback: (status: string) => void) => void;
     question: ({ model, query }: OllamaQuestion) => Promise<ChatResponse>;
     onAnswer: (callback: (response: ChatResponse) => void) => void;

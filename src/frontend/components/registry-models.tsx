@@ -19,17 +19,27 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [cacheStatus, setCacheStatus] = useState<CacheStatus | null>(null);
   const [diskSpaceInfo, setDiskSpaceInfo] = useState<DiskSpaceInfo | null>(null);
-  const [currentModel, setCurrentModel] = useState<any>(null);
+  const [currentModel, setCurrentModel] = useState<RegistryModel | null>(null);
   const [isReplacing, setIsReplacing] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'name' | 'size' | 'popularity'>('name');
   const [pullStatus, setPullStatus] = useState<string>('');
   const [pullProgress, setPullProgress] = useState<number>(0);
   const [canCancel, setCanCancel] = useState<boolean>(true);
+  const [pullStage, setPullStage] = useState<
+    'initializing' | 'downloading' | 'installing' | 'complete'
+  >('initializing');
+  const [estimatedTime, setEstimatedTime] = useState<string>('');
+  const [downloadSpeed, setDownloadSpeed] = useState<string>('');
+  const [errorType, setErrorType] = useState<
+    'network' | 'permission' | 'disk_space' | 'unknown' | null
+  >(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
 
   const loadRegistryModels = async (forceRefresh = false) => {
     setIsLoading(true);
     setError(null);
+    setErrorType(null);
 
     try {
       const models = forceRefresh
@@ -48,9 +58,34 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
       // Load current model
       const current = await window.backendBridge.ollama.getCurrentModel();
       setCurrentModel(current);
-    } catch (err) {
-      setError('Failed to load models from registry. Please check your internet connection.');
+
+      // Reset retry count on success
+      setRetryCount(0);
+    } catch (err: unknown) {
       console.error('Error loading registry models:', err);
+
+      // Classify error type
+      let errorMessage = 'Failed to load models from registry.';
+      let type: 'network' | 'permission' | 'disk_space' | 'unknown' = 'unknown';
+
+      const errorMessageStr = err instanceof Error ? err.message : String(err);
+
+      if (errorMessageStr.includes('network') || errorMessageStr.includes('fetch')) {
+        type = 'network';
+        errorMessage =
+          'Network connection failed. Please check your internet connection and try again.';
+      } else if (errorMessageStr.includes('permission') || errorMessageStr.includes('access')) {
+        type = 'permission';
+        errorMessage =
+          'Permission denied. Please check if the app has access to the models directory.';
+      } else if (errorMessageStr.includes('disk') || errorMessageStr.includes('space')) {
+        type = 'disk_space';
+        errorMessage = 'Insufficient disk space. Please free up some space and try again.';
+      }
+
+      setError(errorMessage);
+      setErrorType(type);
+      setRetryCount((prev) => prev + 1);
     } finally {
       setIsLoading(false);
     }
@@ -58,15 +93,6 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
 
   const handleForceRefresh = async () => {
     await loadRegistryModels(true);
-  };
-
-  const handleClearCache = async () => {
-    try {
-      await window.backendBridge.ollama.clearRegistryCache();
-      await loadRegistryModels(true);
-    } catch (err) {
-      console.error('Error clearing cache:', err);
-    }
   };
 
   const handleModelPull = (modelName: string) => {
@@ -123,6 +149,24 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
     }
   };
 
+  const handleRetry = async () => {
+    if (retryCount < 3) {
+      await loadRegistryModels(true);
+    } else {
+      setError('Maximum retry attempts reached. Please check your connection and try again later.');
+    }
+  };
+
+  const handleClearCacheAndRetry = async () => {
+    try {
+      await window.backendBridge.ollama.clearRegistryCache();
+      await loadRegistryModels(true);
+    } catch (err) {
+      console.error('Error clearing cache:', err);
+      setError('Failed to clear cache. Please try again.');
+    }
+  };
+
   const formatSize = (bytes: number): string => {
     const gb = bytes / (1024 * 1024 * 1024);
     if (gb >= 1) {
@@ -139,6 +183,19 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
     }
     const hours = Math.floor(minutes / 60);
     return `${hours}h ago`;
+  };
+
+  const getErrorIcon = () => {
+    switch (errorType) {
+      case 'network':
+        return '🌐';
+      case 'permission':
+        return '🔒';
+      case 'disk_space':
+        return '💾';
+      default:
+        return '⚠️';
+    }
   };
 
   const filteredModels = registryModels.filter(
@@ -184,9 +241,38 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
       // Extract progress from status messages
       const progressMatch = status.match(/(\d+)%/);
       if (progressMatch) {
-        setPullProgress(parseInt(progressMatch[1]));
+        const progress = parseInt(progressMatch[1]);
+        setPullProgress(progress);
+
+        // Update stage based on progress
+        if (progress < 20) {
+          setPullStage('initializing');
+        } else if (progress < 80) {
+          setPullStage('downloading');
+        } else if (progress < 100) {
+          setPullStage('installing');
+        } else {
+          setPullStage('complete');
+        }
       } else if (status.includes('pulling') || status.includes('downloading')) {
-        setPullProgress((prev) => Math.min(prev + 10, 90)); // Incremental progress
+        setPullProgress((prev) => Math.min(prev + 10, 90));
+        setPullStage('downloading');
+      } else if (status.includes('Initializing') || status.includes('Starting')) {
+        setPullStage('initializing');
+      } else if (status.includes('installing') || status.includes('setting up')) {
+        setPullStage('installing');
+      }
+
+      // Extract download speed if available
+      const speedMatch = status.match(/(\d+(?:\.\d+)?)\s*(MB\/s|GB\/s)/);
+      if (speedMatch) {
+        setDownloadSpeed(`${speedMatch[1]} ${speedMatch[2]}`);
+      }
+
+      // Estimate time remaining based on progress
+      if (pullProgress > 0 && pullProgress < 100) {
+        const remaining = Math.max(1, Math.round((100 - pullProgress) / 10));
+        setEstimatedTime(`${remaining} min remaining`);
       }
     };
 
@@ -222,6 +308,21 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
               {isPulling || 'This may take several minutes...'}
             </Registry.PullSubtitle>
 
+            <Registry.StageIndicator>
+              <Registry.Stage $active={pullStage === 'initializing'} $completed={pullProgress > 0}>
+                <Registry.StageDot $active={pullStage === 'initializing'}>1</Registry.StageDot>
+                <Registry.StageText>Initializing</Registry.StageText>
+              </Registry.Stage>
+              <Registry.Stage $active={pullStage === 'downloading'} $completed={pullProgress > 20}>
+                <Registry.StageDot $active={pullStage === 'downloading'}>2</Registry.StageDot>
+                <Registry.StageText>Downloading</Registry.StageText>
+              </Registry.Stage>
+              <Registry.Stage $active={pullStage === 'installing'} $completed={pullProgress > 80}>
+                <Registry.StageDot $active={pullStage === 'installing'}>3</Registry.StageDot>
+                <Registry.StageText>Installing</Registry.StageText>
+              </Registry.Stage>
+            </Registry.StageIndicator>
+
             <Registry.ProgressContainer>
               <Registry.ProgressBar>
                 <Registry.ProgressFill progress={pullProgress} />
@@ -230,6 +331,23 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
             </Registry.ProgressContainer>
 
             <Registry.StatusText>{pullStatus || 'Initializing...'}</Registry.StatusText>
+
+            {(downloadSpeed || estimatedTime) && (
+              <Registry.DetailsContainer>
+                {downloadSpeed && (
+                  <Registry.DetailItem>
+                    <Registry.DetailIcon>⚡</Registry.DetailIcon>
+                    <Registry.DetailText>{downloadSpeed}</Registry.DetailText>
+                  </Registry.DetailItem>
+                )}
+                {estimatedTime && (
+                  <Registry.DetailItem>
+                    <Registry.DetailIcon>⏱️</Registry.DetailIcon>
+                    <Registry.DetailText>{estimatedTime}</Registry.DetailText>
+                  </Registry.DetailItem>
+                )}
+              </Registry.DetailsContainer>
+            )}
 
             <Registry.PullSpinner />
 
@@ -314,7 +432,15 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
 
         <Registry.SortContainer>
           <Registry.SortLabel>Sort by:</Registry.SortLabel>
-          <Registry.SortSelect value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
+          <Registry.SortSelect
+            value={sortBy}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+              const value = e.target.value;
+              if (value === 'name' || value === 'size' || value === 'popularity') {
+                setSortBy(value);
+              }
+            }}
+          >
             <option value="name">Name</option>
             <option value="size">Size</option>
             <option value="popularity">Popularity</option>
@@ -325,9 +451,12 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
       {/* Error State */}
       {error && (
         <Registry.ErrorContainer>
-          <Registry.ErrorIcon>⚠️</Registry.ErrorIcon>
+          <Registry.ErrorIcon>{getErrorIcon()}</Registry.ErrorIcon>
           <Registry.ErrorText>{error}</Registry.ErrorText>
-          <Registry.RetryButton onClick={handleForceRefresh}>Retry</Registry.RetryButton>
+          <Registry.RetryButton onClick={handleRetry}>Retry</Registry.RetryButton>
+          <Registry.ClearCacheButton onClick={handleClearCacheAndRetry}>
+            Clear Cache & Retry
+          </Registry.ClearCacheButton>
         </Registry.ErrorContainer>
       )}
 
@@ -650,6 +779,7 @@ const Registry = {
   // Error State
   ErrorContainer: Styled.div`
     display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 12px;
     margin: 20px 32px;
@@ -669,6 +799,20 @@ const Registry = {
   `,
 
   RetryButton: Styled.button`
+    padding: 8px 16px;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: rgba(239, 68, 68, 0.2);
+    }
+  `,
+
+  ClearCacheButton: Styled.button`
     padding: 8px 16px;
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: 6px;
@@ -980,6 +1124,39 @@ const Registry = {
     margin: 0;
   `,
 
+  StageIndicator: Styled.div`
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    margin-bottom: 20px;
+  `,
+
+  Stage: Styled.div<{ $active: boolean; $completed: boolean }>`
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: ${(props) => (props.$active ? '#10b981' : '#94a3b8')};
+    font-size: 14px;
+    font-weight: ${(props) => (props.$active ? '600' : '500')};
+    opacity: ${(props) => (props.$active ? 1 : 0.7)};
+    text-shadow: ${(props) => (props.$active ? '0 0 5px rgba(16, 185, 129, 0.5)' : 'none')};
+  `,
+
+  StageDot: Styled.div<{ $active: boolean }>`
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: ${(props) => (props.$active ? '#10b981' : '#94a3b8')};
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+  `,
+
+  StageText: Styled.span``,
+
   ProgressContainer: Styled.div`
     width: 100%;
     max-width: 250px;
@@ -1016,6 +1193,29 @@ const Registry = {
     font-size: 14px;
     color: #94a3b8;
     margin: 0;
+  `,
+
+  DetailsContainer: Styled.div`
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    margin-bottom: 20px;
+  `,
+
+  DetailItem: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #94a3b8;
+    font-size: 14px;
+  `,
+
+  DetailIcon: Styled.span`
+    font-size: 16px;
+  `,
+
+  DetailText: Styled.span`
+    font-weight: 500;
   `,
 
   PullSpinner: Styled.div`

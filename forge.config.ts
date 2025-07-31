@@ -52,7 +52,9 @@ const config: ForgeConfig = {
         ? exec(`chmod +x ${filePath}`)
         : fs.chmodSync(filePath, 755);
 
-      fs.mkdirSync('executables');
+      if (!fs.existsSync('executables')) {
+        fs.mkdirSync('executables');
+      }
       fs.copyFileSync(filePath, `executables/${platformFile}`);
     },
     postPackage: async () => {
