@@ -18,7 +18,7 @@ import { parseResponse } from '../utils/utils';
 import { ActionParams } from '../utils/types';
 
 const ChatView = (): React.JSX.Element => {
-  const [selectedModel] = useState('llama2');
+  const [selectedModel, setSelectedModel] = useState<string>('llama2');
   const [dialogueEntries, setDialogueEntries] = useAIMessagesContext();
   const [inputValue, setInputValue] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState<AIMessage>();
@@ -29,6 +29,22 @@ const ChatView = (): React.JSX.Element => {
 
   const chatMainRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
+
+  // Load current model on component mount
+  useEffect(() => {
+    const loadCurrentModel = async () => {
+      try {
+        const model = await window.backendBridge.ollama.getCurrentModel();
+        if (model?.name) {
+          setSelectedModel(model.name);
+        }
+      } catch (error) {
+        console.error('Failed to load current model:', error);
+      }
+    };
+
+    loadCurrentModel();
+  }, []);
 
   useEffect(() => {
     window.backendBridge.ollama.onAnswer((response) => {

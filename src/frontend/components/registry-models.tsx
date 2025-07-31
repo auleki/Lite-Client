@@ -21,7 +21,7 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
   const [diskSpaceInfo, setDiskSpaceInfo] = useState<DiskSpaceInfo | null>(null);
   const [currentModel, setCurrentModel] = useState<RegistryModel | null>(null);
   const [isReplacing, setIsReplacing] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sortBy, setSortBy] = useState<'name' | 'size' | 'popularity'>('name');
   const [pullStatus, setPullStatus] = useState<string>('');
   const [pullProgress, setPullProgress] = useState<number>(0);
@@ -55,9 +55,23 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
       const diskInfo = await window.backendBridge.ollama.getDiskSpaceInfo();
       setDiskSpaceInfo(diskInfo);
 
-      // Load current model
+      // Load current model with smart default logic
       const current = await window.backendBridge.ollama.getCurrentModel();
-      setCurrentModel(current);
+      if (current?.name) {
+        setCurrentModel(current);
+      } else {
+        // If no current model, check for orca-mini:3b as default
+        const allModels = await window.backendBridge.ollama.getAllModels();
+        if (allModels?.models && allModels.models.length > 0) {
+          const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:3b');
+          if (orcaMini) {
+            setCurrentModel({ ...orcaMini, isDefault: true });
+          } else {
+            // Use first available model as fallback
+            setCurrentModel({ ...allModels.models[0], isDefault: true });
+          }
+        }
+      }
 
       // Reset retry count on success
       setRetryCount(0);
@@ -371,6 +385,15 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
         <Registry.HeaderLeft>
           <Registry.Title>Model Registry</Registry.Title>
           <Registry.Subtitle>Discover and install AI models</Registry.Subtitle>
+          {currentModel && (
+            <Registry.CurrentModelIndicator>
+              <Registry.CurrentModelIcon>🎯</Registry.CurrentModelIcon>
+              <Registry.CurrentModelText>
+                Current Model: {currentModel.name}
+                {currentModel.isDefault && ' (default)'}
+              </Registry.CurrentModelText>
+            </Registry.CurrentModelIndicator>
+          )}
         </Registry.HeaderLeft>
 
         <Registry.HeaderRight>
@@ -400,13 +423,6 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
           <Registry.StatItem>
             <Registry.StatIcon>💾</Registry.StatIcon>
             <Registry.StatText>{diskSpaceInfo.freeGB}GB free</Registry.StatText>
-          </Registry.StatItem>
-        )}
-
-        {currentModel && (
-          <Registry.StatItem>
-            <Registry.StatIcon>🎯</Registry.StatIcon>
-            <Registry.StatText>Current: {currentModel.name}</Registry.StatText>
           </Registry.StatItem>
         )}
 
@@ -473,86 +489,178 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
             </Registry.EmptyState>
           ) : (
             sortedModels.map((model) => (
-              <Registry.ModelCard key={model.name} viewMode={viewMode}>
-                <Registry.ModelCardHeader>
-                  <Registry.ModelInfo>
-                    <Registry.ModelName>{model.name}</Registry.ModelName>
-                    <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
-                  </Registry.ModelInfo>
+              <Registry.ModelCard
+                key={model.name}
+                viewMode={viewMode}
+                $isCurrentModel={currentModel && currentModel.name === model.name}
+              >
+                {viewMode === 'list' ? (
+                  // List view layout
+                  <>
+                    <Registry.ModelCardContent>
+                      <Registry.ModelCardHeader>
+                        <Registry.ModelInfo>
+                          <Registry.ModelName>{model.name}</Registry.ModelName>
+                          <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
+                        </Registry.ModelInfo>
 
-                  <Registry.ModelStatus>
-                    {model.isInstalled && (
-                      <Registry.InstalledBadge>
-                        <Registry.CheckIcon />
-                        Installed
-                      </Registry.InstalledBadge>
-                    )}
-                  </Registry.ModelStatus>
-                </Registry.ModelCardHeader>
+                        <Registry.ModelStatus>
+                          {model.isInstalled && (
+                            <Registry.InstalledBadge>
+                              <Registry.CheckIcon />
+                              Installed
+                            </Registry.InstalledBadge>
+                          )}
+                        </Registry.ModelStatus>
+                      </Registry.ModelCardHeader>
 
-                {model.description && (
-                  <Registry.ModelDescription>{model.description}</Registry.ModelDescription>
-                )}
+                      {model.description && (
+                        <Registry.ModelDescription>{model.description}</Registry.ModelDescription>
+                      )}
 
-                {model.tags && model.tags.length > 0 && (
-                  <Registry.ModelTags>
-                    {model.tags.slice(0, 3).map((tag, index) => (
-                      <Registry.Tag key={index}>{tag}</Registry.Tag>
-                    ))}
-                    {model.tags.length > 3 && (
-                      <Registry.TagMore>+{model.tags.length - 3}</Registry.TagMore>
-                    )}
-                  </Registry.ModelTags>
-                )}
+                      {model.tags && model.tags.length > 0 && (
+                        <Registry.ModelTags>
+                          {model.tags.slice(0, 3).map((tag, index) => (
+                            <Registry.Tag key={index}>{tag}</Registry.Tag>
+                          ))}
+                          {model.tags.length > 3 && (
+                            <Registry.TagMore>+{model.tags.length - 3}</Registry.TagMore>
+                          )}
+                        </Registry.ModelTags>
+                      )}
 
-                <Registry.ModelCardFooter>
-                  <Registry.SpaceIndicator>
-                    {diskSpaceInfo &&
-                      (diskSpaceInfo.free > model.size ? (
-                        <Registry.SpaceSuccess>
-                          <Registry.SpaceIcon>✓</Registry.SpaceIcon>
-                          Enough space
-                        </Registry.SpaceSuccess>
-                      ) : (
-                        <Registry.SpaceError>
-                          <Registry.SpaceIcon>✗</Registry.SpaceIcon>
-                          Need{' '}
-                          {(
-                            model.size / (1024 * 1024 * 1024) -
-                            parseFloat(diskSpaceInfo.freeGB)
-                          ).toFixed(1)}
-                          GB more
-                        </Registry.SpaceError>
-                      ))}
-                  </Registry.SpaceIndicator>
+                      <Registry.SpaceIndicator>
+                        {diskSpaceInfo &&
+                          (diskSpaceInfo.free > model.size ? (
+                            <Registry.SpaceSuccess>
+                              <Registry.SpaceIcon>✓</Registry.SpaceIcon>
+                              Enough space
+                            </Registry.SpaceSuccess>
+                          ) : (
+                            <Registry.SpaceError>
+                              <Registry.SpaceIcon>✗</Registry.SpaceIcon>
+                              Need{' '}
+                              {(
+                                model.size / (1024 * 1024 * 1024) -
+                                parseFloat(diskSpaceInfo.freeGB)
+                              ).toFixed(1)}
+                              GB more
+                            </Registry.SpaceError>
+                          ))}
+                      </Registry.SpaceIndicator>
+                    </Registry.ModelCardContent>
 
-                  <Registry.ActionButtons>
-                    <Registry.PullButton
-                      onClick={() => handleModelPull(model.name)}
-                      disabled={
-                        model.isInstalled ||
-                        (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
-                        isReplacing ||
-                        isPulling === model.name
-                      }
-                    >
-                      {model.isInstalled
-                        ? 'Installed'
-                        : isPulling === model.name
-                          ? 'Pulling...'
-                          : 'Pull'}
-                    </Registry.PullButton>
-
-                    {currentModel && currentModel.name !== model.name && (
-                      <Registry.ReplaceButton
-                        onClick={() => handlePullAndReplace(model.name)}
-                        disabled={isReplacing || isPulling === model.name}
+                    <Registry.ActionButtons>
+                      <Registry.PullButton
+                        onClick={() => handleModelPull(model.name)}
+                        disabled={
+                          model.isInstalled ||
+                          (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
+                          isReplacing ||
+                          isPulling === model.name
+                        }
                       >
-                        {isReplacing ? 'Replacing...' : 'Replace'}
-                      </Registry.ReplaceButton>
+                        {model.isInstalled
+                          ? 'Installed'
+                          : isPulling === model.name
+                            ? 'Pulling...'
+                            : 'Pull'}
+                      </Registry.PullButton>
+
+                      {currentModel && currentModel.name !== model.name && (
+                        <Registry.ReplaceButton
+                          onClick={() => handlePullAndReplace(model.name)}
+                          disabled={isReplacing || isPulling === model.name}
+                        >
+                          {isReplacing ? 'Replacing...' : 'Replace'}
+                        </Registry.ReplaceButton>
+                      )}
+                    </Registry.ActionButtons>
+                  </>
+                ) : (
+                  // Grid view layout (original)
+                  <>
+                    <Registry.ModelCardHeader>
+                      <Registry.ModelInfo>
+                        <Registry.ModelName>{model.name}</Registry.ModelName>
+                        <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
+                      </Registry.ModelInfo>
+
+                      <Registry.ModelStatus>
+                        {model.isInstalled && (
+                          <Registry.InstalledBadge>
+                            <Registry.CheckIcon />
+                            Installed
+                          </Registry.InstalledBadge>
+                        )}
+                      </Registry.ModelStatus>
+                    </Registry.ModelCardHeader>
+
+                    {model.description && (
+                      <Registry.ModelDescription>{model.description}</Registry.ModelDescription>
                     )}
-                  </Registry.ActionButtons>
-                </Registry.ModelCardFooter>
+
+                    {model.tags && model.tags.length > 0 && (
+                      <Registry.ModelTags>
+                        {model.tags.slice(0, 3).map((tag, index) => (
+                          <Registry.Tag key={index}>{tag}</Registry.Tag>
+                        ))}
+                        {model.tags.length > 3 && (
+                          <Registry.TagMore>+{model.tags.length - 3}</Registry.TagMore>
+                        )}
+                      </Registry.ModelTags>
+                    )}
+
+                    <Registry.ModelCardFooter viewMode={viewMode}>
+                      <Registry.SpaceIndicator>
+                        {diskSpaceInfo &&
+                          (diskSpaceInfo.free > model.size ? (
+                            <Registry.SpaceSuccess>
+                              <Registry.SpaceIcon>✓</Registry.SpaceIcon>
+                              Enough space
+                            </Registry.SpaceSuccess>
+                          ) : (
+                            <Registry.SpaceError>
+                              <Registry.SpaceIcon>✗</Registry.SpaceIcon>
+                              Need{' '}
+                              {(
+                                model.size / (1024 * 1024 * 1024) -
+                                parseFloat(diskSpaceInfo.freeGB)
+                              ).toFixed(1)}
+                              GB more
+                            </Registry.SpaceError>
+                          ))}
+                      </Registry.SpaceIndicator>
+
+                      <Registry.ActionButtons>
+                        <Registry.PullButton
+                          onClick={() => handleModelPull(model.name)}
+                          disabled={
+                            model.isInstalled ||
+                            (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
+                            isReplacing ||
+                            isPulling === model.name
+                          }
+                        >
+                          {model.isInstalled
+                            ? 'Installed'
+                            : isPulling === model.name
+                              ? 'Pulling...'
+                              : 'Pull'}
+                        </Registry.PullButton>
+
+                        {currentModel && currentModel.name !== model.name && (
+                          <Registry.ReplaceButton
+                            onClick={() => handlePullAndReplace(model.name)}
+                            disabled={isReplacing || isPulling === model.name}
+                          >
+                            {isReplacing ? 'Replacing...' : 'Replace'}
+                          </Registry.ReplaceButton>
+                        )}
+                      </Registry.ActionButtons>
+                    </Registry.ModelCardFooter>
+                  </>
+                )}
               </Registry.ModelCard>
             ))
           )}
@@ -599,6 +707,27 @@ const Registry = {
     font-size: 14px;
     color: #94a3b8;
     margin: 0;
+  `,
+
+  CurrentModelIndicator: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 6px;
+  `,
+
+  CurrentModelIcon: Styled.span`
+    font-size: 14px;
+  `,
+
+  CurrentModelText: Styled.span`
+    font-size: 13px;
+    color: #10b981;
+    font-weight: 500;
   `,
 
   HeaderRight: Styled.div`
@@ -845,9 +974,9 @@ const Registry = {
   `,
 
   // Model Card
-  ModelCard: Styled.div<{ viewMode: 'grid' | 'list' }>`
-    background: rgba(30, 41, 59, 0.8);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+  ModelCard: Styled.div<{ viewMode: 'grid' | 'list'; $isCurrentModel?: boolean }>`
+    background: ${(props) => (props.$isCurrentModel ? 'rgba(16, 185, 129, 0.1)' : 'rgba(30, 41, 59, 0.8)')};
+    border: 1px solid ${(props) => (props.$isCurrentModel ? 'rgba(16, 185, 129, 0.5)' : 'rgba(148, 163, 184, 0.1)')};
     border-radius: 12px;
     padding: ${(props) => (props.viewMode === 'grid' ? '20px' : '16px')};
     transition: all 0.2s ease;
@@ -855,10 +984,29 @@ const Registry = {
       props.viewMode === 'list'
         ? `
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 20px;
     `
         : ''}
+
+    ${(props) =>
+      props.$isCurrentModel &&
+      `
+      position: relative;
+      &::before {
+        content: '🎯 Current Model';
+        position: absolute;
+        top: -8px;
+        left: 12px;
+        background: #10b981;
+        color: white;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 4px;
+        z-index: 1;
+      }
+    `}
 
     &:hover {
       border-color: rgba(16, 185, 129, 0.3);
@@ -872,6 +1020,13 @@ const Registry = {
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 12px;
+  `,
+
+  ModelCardContent: Styled.div`
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   `,
 
   ModelInfo: Styled.div`
@@ -945,10 +1100,10 @@ const Registry = {
     border: 1px solid rgba(148, 163, 184, 0.2);
   `,
 
-  ModelCardFooter: Styled.div`
+  ModelCardFooter: Styled.div<{ viewMode?: 'grid' | 'list' }>`
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: ${(props) => (props.viewMode === 'list' ? 'flex-start' : 'center')};
   `,
 
   SpaceIndicator: Styled.div``,
@@ -978,6 +1133,7 @@ const Registry = {
   ActionButtons: Styled.div`
     display: flex;
     gap: 8px;
+    align-self: flex-start;
   `,
 
   PullButton: Styled.button`

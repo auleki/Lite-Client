@@ -1,5 +1,5 @@
 // libs
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Styled from 'styled-components';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -13,6 +13,57 @@ import { MainRouter } from '../../router';
 export default () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [currentModel, setCurrentModel] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadCurrentModel = async () => {
+      try {
+        // First try to get the "current" model (loaded model)
+        const currentModel = await window.backendBridge.ollama.getCurrentModel();
+        console.log('Current model:', currentModel);
+
+        if (currentModel?.name) {
+          setCurrentModel(currentModel.name);
+        } else {
+          // If no current model, check for orca-mini:3b
+          const allModels = await window.backendBridge.ollama.getAllModels();
+          console.log('All available models:', allModels);
+
+          if (allModels?.models && allModels.models.length > 0) {
+            const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:3b');
+
+            if (orcaMini) {
+              // orca-mini:3b is available, use it as default
+              setCurrentModel('orca-mini:3b (default)');
+            } else {
+              // orca-mini:3b not available, notify user and download it
+              console.log('orca-mini:3b not found, downloading...');
+              setCurrentModel('Downloading orca-mini:3b...');
+
+              try {
+                // Download orca-mini:3b
+                await window.backendBridge.ollama.getModel('orca-mini:3b');
+                setCurrentModel('orca-mini:3b (default)');
+                console.log('orca-mini:3b downloaded successfully');
+              } catch (downloadError) {
+                console.error('Failed to download orca-mini:3b:', downloadError);
+                // Fallback to first available model
+                const fallbackModel = allModels.models[0];
+                setCurrentModel(`${fallbackModel.name} (fallback)`);
+              }
+            }
+          } else {
+            setCurrentModel(null);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load current model:', error);
+        setCurrentModel(null);
+      }
+    };
+
+    loadCurrentModel();
+  }, []);
 
   const handleNewChat = () => {
     navigate('/chat');
@@ -61,6 +112,12 @@ export default () => {
               <Main.StatusDot />
               <Main.StatusText>Ollama Connected</Main.StatusText>
             </Main.StatusIndicator>
+            {currentModel && (
+              <Main.ModelIndicator>
+                <Main.ModelIcon>🎯</Main.ModelIcon>
+                <Main.ModelText>{currentModel}</Main.ModelText>
+              </Main.ModelIndicator>
+            )}
           </Main.SidebarFooter>
         </Main.SidebarContent>
       </Main.Sidebar>
@@ -169,6 +226,25 @@ const Main = {
   `,
   StatusText: Styled.span`
     color: white;
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: 0.8rem;
+    font-weight: 500;
+  `,
+  ModelIndicator: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-top: 8px;
+    background: ${(props) => props.theme.colors.hunter};
+    border: 1px solid ${(props) => props.theme.colors.emerald};
+    border-radius: 6px;
+  `,
+  ModelIcon: Styled.span`
+    font-size: 0.9rem;
+  `,
+  ModelText: Styled.span`
+    color: ${(props) => props.theme.colors.emerald};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: 0.8rem;
     font-weight: 500;
