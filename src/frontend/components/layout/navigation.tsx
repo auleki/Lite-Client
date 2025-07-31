@@ -13,6 +13,7 @@ import SettingsImg from './../../assets/images/settings.svg';
 const MainNavigation = () => {
   return (
     <TopNav.Layout>
+      <TopNav.MainNavButton icon={<TopNav.HomeIcon />} text="home" href="/" exact={true} />
       <TopNav.MainNavButton icon={<TopNav.ChatIcon />} text="chat" href="/chat" exact={true} />
       <TopNav.MainNavButton
         icon={<TopNav.RegistryIcon />}
@@ -20,7 +21,6 @@ const MainNavigation = () => {
         href="/registry"
         exact={true}
       />
-      {/* <TopNav.MainNavButton icon={<TopNav.HomeIcon />} text="home" href="/" exact={true} /> */}
       <TopNav.MainNavButton
         icon={<TopNav.SettingsIcon />}
         text="settings"

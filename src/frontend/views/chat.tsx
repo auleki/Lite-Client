@@ -23,6 +23,8 @@ const ChatView = (): JSX.Element => {
   const [inputValue, setInputValue] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState<AIMessage>();
   const [isOllamaBeingPolled, setIsOllamaBeingPolled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const { provider, account } = useSDK();
 
   const chatMainRef = useRef<HTMLDivElement>(null);
@@ -36,6 +38,8 @@ const ChatView = (): JSX.Element => {
       ]);
 
       setInputValue('');
+      setError(null);
+      setIsLoading(false);
     });
 
     return () => {
@@ -160,41 +164,45 @@ const ChatView = (): JSX.Element => {
   };
 
   const handleQuestionAsked = async (question: string) => {
-    if (isOllamaBeingPolled) {
-      return;
-    }
+    if (!question.trim()) return;
 
-    const dialogueEntry = {
-      question: question,
-      answered: false,
-    };
-
-    setCurrentQuestion(dialogueEntry);
-    setInputValue('');
-
+    setError(null);
+    setIsLoading(true);
     setIsOllamaBeingPolled(true);
+    setCurrentQuestion({ question, answer: '', answered: false });
 
-    const inference = await window.backendBridge.ollama.question({
-      model: selectedModel,
-      query: question,
-    });
+    try {
+      const inference = await window.backendBridge.ollama.question({
+        model: selectedModel,
+        query: question,
+      });
 
-    console.log(inference);
-    if (inference) {
-      const { response, action: action } = parseResponse(inference.message.content);
+      if (inference) {
+        const { response, action } = parseResponse(inference.message.content);
 
-      if (response == 'error') {
-        updateDialogueEntries(question, 'Sorry, I had a problem with your request.');
-      } else {
-        await processResponse(question, response, action);
+        if (response === 'error') {
+          setError('Sorry, I had a problem with your request.');
+          updateDialogueEntries(question, 'Sorry, I had a problem with your request.');
+        } else {
+          await processResponse(question, response, action);
+        }
       }
+    } catch (err) {
+      setError('Failed to send message. Please try again.');
+      setIsLoading(false);
+      setIsOllamaBeingPolled(false);
+      setCurrentQuestion(undefined);
     }
-
-    setIsOllamaBeingPolled(false);
   };
 
   const handleQuestionChange = (e: FormEvent<HTMLInputElement>) => {
     setInputValue(e.currentTarget.value);
+  };
+
+  const handleRetry = () => {
+    if (currentQuestion) {
+      handleQuestionAsked(currentQuestion.question);
+    }
   };
 
   return (
@@ -205,6 +213,7 @@ const ChatView = (): JSX.Element => {
             <Chat.WelcomeIcon>🤖</Chat.WelcomeIcon>
             <Chat.WelcomeTitle>Welcome to Morpheus</Chat.WelcomeTitle>
             <Chat.WelcomeText>How can I help you today?</Chat.WelcomeText>
+            <Chat.WelcomeHint>Try asking me anything - I'm here to help!</Chat.WelcomeHint>
           </Chat.WelcomeMessage>
         )}
 
@@ -238,6 +247,14 @@ const ChatView = (): JSX.Element => {
             </Chat.AIMessage>
           </Chat.MessageWrapper>
         )}
+
+        {error && (
+          <Chat.ErrorMessage>
+            <Chat.ErrorIcon>⚠️</Chat.ErrorIcon>
+            <Chat.ErrorText>{error}</Chat.ErrorText>
+            <Chat.RetryButton onClick={handleRetry}>Retry</Chat.RetryButton>
+          </Chat.ErrorMessage>
+        )}
       </Chat.Main>
 
       <Chat.InputContainer>
@@ -247,7 +264,7 @@ const ChatView = (): JSX.Element => {
             disabled={isOllamaBeingPolled}
             value={inputValue}
             onChange={handleQuestionChange}
-            placeholder="Message Morpheus..."
+            placeholder={isOllamaBeingPolled ? 'Morpheus is thinking...' : 'Message Morpheus...'}
             onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -262,6 +279,12 @@ const ChatView = (): JSX.Element => {
             <Chat.SendIcon>→</Chat.SendIcon>
           </Chat.SendButton>
         </Chat.InputWrapper>
+
+        {isLoading && (
+          <Chat.LoadingIndicator>
+            <Chat.LoadingText>Processing your request...</Chat.LoadingText>
+          </Chat.LoadingIndicator>
+        )}
       </Chat.InputContainer>
     </Chat.Layout>
   );
@@ -313,6 +336,13 @@ const Chat = {
     margin: 0;
     opacity: 0.8;
   `,
+  WelcomeHint: Styled.p`
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: 0.9rem;
+    margin-top: 10px;
+    opacity: 0.7;
+  `,
   MessageWrapper: Styled.div`
     display: flex;
     flex-direction: column;
@@ -356,6 +386,58 @@ const Chat = {
   `,
   PollingIndicator: Styled(ThreeDots)`
     display: flex;
+  `,
+  ErrorMessage: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 15px 20px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 15px;
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.medium};
+    margin: 20px auto;
+    max-width: 80%;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  `,
+  ErrorIcon: Styled.span`
+    font-size: 24px;
+  `,
+  ErrorText: Styled.span`
+    flex: 1;
+  `,
+  RetryButton: Styled.button`
+    background: ${(props) => props.theme.colors.emerald};
+    color: white;
+    padding: 8px 15px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.medium};
+    transition: background 0.2s ease;
+
+    &:hover {
+      background: ${(props) => props.theme.colors.hunter};
+    }
+  `,
+  LoadingIndicator: Styled.div`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: ${(props) => props.theme.colors.hunter};
+    border-radius: 15px;
+    margin: 20px auto;
+    max-width: 80%;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  `,
+  LoadingText: Styled.span`
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.medium};
   `,
   InputContainer: Styled.div`
     display: flex;
