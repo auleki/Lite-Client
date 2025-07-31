@@ -104,7 +104,6 @@ const HomeView = (): React.JSX.Element => {
           </Home.ActionCard>
 
           <Home.ActionCard onClick={() => handleQuickAction('models')}>
-            <Home.ActionIcon>🤖</Home.ActionIcon>
             <Home.ActionTitle>Manage Models</Home.ActionTitle>
             <Home.ActionDescription>View and install AI models</Home.ActionDescription>
           </Home.ActionCard>

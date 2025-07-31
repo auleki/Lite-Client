@@ -46,7 +46,7 @@ export default () => {
             </Main.ActionButton>
 
             <Main.ActionButton onClick={handleModels} $active={isActive('/registry')}>
-              <Main.ActionIcon>🤖</Main.ActionIcon>
+              <Main.ActionIcon>📦</Main.ActionIcon>
               <Main.ActionText>Models</Main.ActionText>
             </Main.ActionButton>
 

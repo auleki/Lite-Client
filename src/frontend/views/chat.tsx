@@ -210,7 +210,6 @@ const ChatView = (): React.JSX.Element => {
       <Chat.Main ref={chatMainRef}>
         {dialogueEntries.length === 0 && (
           <Chat.WelcomeMessage>
-            <Chat.WelcomeIcon>🤖</Chat.WelcomeIcon>
             <Chat.WelcomeTitle>Welcome to Morpheus</Chat.WelcomeTitle>
             <Chat.WelcomeText>How can I help you today?</Chat.WelcomeText>
             <Chat.WelcomeHint>Try asking me anything - I'm here to help!</Chat.WelcomeHint>

@@ -35,7 +35,6 @@ const AppInit = () => {
       <Main.Draggable />
       <Main.Content>
         <Main.Header>
-          <Main.Logo>🧠</Main.Logo>
           <Main.Title>Morpheus</Main.Title>
           <Main.Subtitle>Private AI Assistant</Main.Subtitle>
         </Main.Header>
