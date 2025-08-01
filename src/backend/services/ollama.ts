@@ -265,25 +265,124 @@ export const getAvailableModelsFromRegistry = async (forceRefresh = false) => {
     }
 
     logger.info('Fetching fresh data from Ollama registry');
-    const response = await fetch('https://ollama.com/api/tags');
+    // Use the community API that provides access to the full model registry
+    let response;
+    try {
+      // Fetch all models with pagination - get 200 models to ensure we get everything
+      response = await fetch('https://ollamadb.dev/api/v1/models?limit=200', {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Morpheus-Client/1.0',
+        },
+      });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch registry: ${response.status} ${response.statusText}`);
+      logger.info(`Community API response status: ${response.status}`);
+
+      if (!response.ok) {
+        throw new Error(`Community API request failed: ${response.status} ${response.statusText}`);
+      }
+    } catch (error) {
+      logger.error('Failed to fetch from community API:', error);
+      // Fall back to the original API
+      logger.info('Falling back to original Ollama API');
+      response = await fetch('https://ollama.com/api/tags', {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Morpheus-Client/1.0',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch registry: ${response.status} ${response.statusText}`);
+      }
     }
 
     const data = await response.json();
+    logger.info(`API response received: ${JSON.stringify(data).substring(0, 200)}...`);
+    logger.info(`API response structure: models array length = ${data.models?.length || 0}`);
+    if (data.total_count) {
+      logger.info(`Total models available: ${data.total_count}`);
+    }
 
     // Transform the data to match our expected format
-    const models =
-      data.models?.map((model: any) => ({
-        name: model.name,
-        description: model.details?.description || '',
-        size: model.size,
-        modifiedAt: model.modified_at,
-        digest: model.digest,
-        tags: model.details?.families || [],
-        isInstalled: false, // Will be computed by comparing with local models
-      })) || [];
+    // The community API returns {models: [...]} format
+    const models = data.models
+      ? data.models.map((model: any) => {
+          // Generate tags based on model name, description, and URL
+          const generateTags = (modelName: string, description: string, url?: string) => {
+            const tags: string[] = [];
+
+            // Extract model family from name
+            if (modelName.includes('llama')) tags.push('llama');
+            if (modelName.includes('mistral')) tags.push('mistral');
+            if (modelName.includes('gemma')) tags.push('gemma');
+            if (modelName.includes('qwen')) tags.push('qwen');
+            if (modelName.includes('phi')) tags.push('phi');
+            if (modelName.includes('deepseek')) tags.push('deepseek');
+            if (modelName.includes('nomic')) tags.push('nomic');
+            if (modelName.includes('llava')) tags.push('llava');
+            if (modelName.includes('orca')) tags.push('orca');
+            if (modelName.includes('neural')) tags.push('neural');
+            if (modelName.includes('code')) tags.push('code');
+            if (modelName.includes('codellama')) tags.push('code');
+
+            // Extract size indicators
+            if (modelName.includes('3b') || modelName.includes('3B')) tags.push('3b');
+            if (modelName.includes('7b') || modelName.includes('7B')) tags.push('7b');
+            if (modelName.includes('13b') || modelName.includes('13B')) tags.push('13b');
+            if (modelName.includes('70b') || modelName.includes('70B')) tags.push('70b');
+
+            // Extract capabilities from description and URL
+            const descriptionLower = description.toLowerCase();
+            const urlLower = url?.toLowerCase() || '';
+
+            if (
+              descriptionLower.includes('code') ||
+              modelName.includes('code') ||
+              urlLower.includes('code')
+            )
+              tags.push('programming');
+            if (descriptionLower.includes('chat') || urlLower.includes('chat')) tags.push('chat');
+            if (
+              descriptionLower.includes('vision') ||
+              modelName.includes('llava') ||
+              urlLower.includes('vision')
+            )
+              tags.push('vision');
+            if (descriptionLower.includes('embed') || urlLower.includes('embed'))
+              tags.push('embedding');
+            if (descriptionLower.includes('text') || urlLower.includes('text')) tags.push('text');
+            if (descriptionLower.includes('instruct') || urlLower.includes('instruct'))
+              tags.push('instruct');
+
+            // Add general tags
+            tags.push('ai');
+            tags.push('llm');
+
+            return [...new Set(tags)]; // Remove duplicates
+          };
+
+          return {
+            name: model.model_name || model.model_identifier,
+            description: model.description || '',
+            size: model.size || 4.1 * 1024 * 1024 * 1024, // Default to 4.1GB if not specified
+            modifiedAt: model.last_updated || '2024-01-01T00:00:00Z',
+            digest: model.digest || 'sha256:1234567890abcdef',
+            tags: generateTags(
+              model.model_name || model.model_identifier,
+              model.description || '',
+              model.url,
+            ),
+            url: model.url || '',
+            isInstalled: false, // Will be computed by comparing with local models
+          };
+        })
+      : [];
+
+    logger.info(`Transformed ${models.length} models from API`);
+    if (models.length > 0) {
+      logger.info(`First model: ${models[0].name}`);
+    }
 
     // If we get very few models from the API (less than 10), supplement with curated list
     if (models.length < 10) {
@@ -462,6 +561,93 @@ const POPULAR_MODELS = [
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
     tags: ['neural', 'chat', '7b'],
+    isInstalled: false,
+  },
+  {
+    name: 'deepseek-r1',
+    description:
+      'DeepSeek-R1 is a family of open reasoning models with performance approaching that of leading models',
+    size: 1275 * 1024 * 1024 * 1024, // 1275GB
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['deepseek', 'reasoning', 'tools', '671b'],
+    isInstalled: false,
+  },
+  {
+    name: 'gemma3',
+    description: 'Gemma 3 is the current, most capable model that runs on a single GPU',
+    size: 4.1 * 1024 * 1024 * 1024,
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['gemma', 'google', 'vision'],
+    isInstalled: false,
+  },
+  {
+    name: 'qwen3',
+    description: 'Qwen3 is the latest generation of large language models in Qwen series',
+    size: 4.1 * 1024 * 1024 * 1024,
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['qwen', 'alibaba', 'tools', 'thinking'],
+    isInstalled: false,
+  },
+  {
+    name: 'llama3.1',
+    description:
+      'Llama 3.1 is a new state-of-the-art model from Meta available in 8B, 70B and 405B parameter sizes',
+    size: 4.1 * 1024 * 1024 * 1024,
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['llama', 'meta', 'tools'],
+    isInstalled: false,
+  },
+  {
+    name: 'mistral',
+    description: 'The 7B model released by Mistral AI, updated to version 0.3',
+    size: 4.1 * 1024 * 1024 * 1024,
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['mistral', 'tools'],
+    isInstalled: false,
+  },
+  {
+    name: 'llava',
+    description:
+      'LLaVA is a novel end-to-end trained large multimodal model for visual and language understanding',
+    size: 4.1 * 1024 * 1024 * 1024,
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['llava', 'vision', 'multimodal'],
+    isInstalled: false,
+  },
+  {
+    name: 'phi3',
+    description:
+      'Phi-3 is a family of lightweight 3B (Mini) and 14B (Medium) state-of-the-art open models by Microsoft',
+    size: 4.1 * 1024 * 1024 * 1024,
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['phi', 'microsoft'],
+    isInstalled: false,
+  },
+  {
+    name: 'gemma2',
+    description:
+      'Google Gemma 2 is a high-performing and efficient model available in three sizes: 2B, 9B, and 27B',
+    size: 4.1 * 1024 * 1024 * 1024,
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['gemma', 'google'],
+    isInstalled: false,
+  },
+  {
+    name: 'qwen2.5-coder',
+    description:
+      'The latest series of Code-Specific Qwen models, with significant improvements in code generation',
+    size: 4.1 * 1024 * 1024 * 1024,
+    modifiedAt: '2024-01-01T00:00:00Z',
+    digest: 'sha256:1234567890abcdef',
+    tags: ['qwen', 'code', 'tools'],
     isInstalled: false,
   },
   {

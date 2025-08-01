@@ -53,7 +53,7 @@ const AppInit = () => {
               <Main.SuccessText>Ready to chat!</Main.SuccessText>
             </Main.SuccessMessage>
           ) : (
-            <>{currentStatus && <Main.StatusText>{currentStatus}</Main.StatusText>}</>
+            currentStatus && <Main.StatusText>{currentStatus}</Main.StatusText>
           )}
         </Main.StatusSection>
       </Main.Content>
@@ -71,6 +71,7 @@ const Main = {
     height: 100vh;
     background: ${(props) => props.theme.colors.core};
     position: relative;
+    min-height: 100vh;
   `,
   Draggable: Styled.div`
     display: flex;
@@ -90,6 +91,11 @@ const Main = {
     width: 100%;
     height: 100%;
     padding: 20px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
   `,
   Header: Styled.div`
     display: flex;
@@ -102,15 +108,19 @@ const Main = {
     margin-bottom: 10px;
   `,
   Title: Styled.h1`
-    font-size: 36px;
+    font-size: 48px;
     font-family: ${(props) => props.theme.fonts.family.primary.bold};
+    font-weight: 700;
     color: ${(props) => props.theme.colors.emerald};
-    margin-bottom: 5px;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   `,
   Subtitle: Styled.p`
-    font-size: 18px;
+    font-size: 20px;
+    font-weight: 500;
     color: ${(props) => props.theme.colors.notice};
-    margin-bottom: 20px;
+    margin-bottom: 30px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   `,
   ProgressSection: Styled.div`
     width: 100%;
@@ -136,25 +146,35 @@ const Main = {
     transition: width 0.3s ease-in-out;
   `,
   ProgressText: Styled.span`
-    font-size: 14px;
+    font-size: 16px;
+    font-weight: 600;
     color: ${(props) => props.theme.colors.notice};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   `,
   StatusSection: Styled.div`
     width: 100%;
     max-width: 600px;
     text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   `,
   StatusText: Styled.div`
     display: flex;
     color: ${(props) => props.theme.colors.notice};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.smallest};
+    font-size: 16px;
+    font-weight: 500;
     text-align: center;
     margin-top: 20px;
     max-width: 400px;
     word-wrap: break-word;
     justify-content: center;
+    align-items: center;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    width: 100%;
   `,
   SuccessMessage: Styled.div`
     display: flex;
@@ -162,8 +182,10 @@ const Main = {
     justify-content: center;
     color: ${(props) => props.theme.colors.emerald};
     font-family: ${(props) => props.theme.fonts.family.primary.bold};
-    font-size: 20px;
+    font-size: 24px;
+    font-weight: 700;
     margin-top: 20px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   `,
   SuccessIcon: Styled.span`
     font-size: 30px;

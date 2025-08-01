@@ -57,7 +57,9 @@ export interface RegistryModel {
   modifiedAt: string;
   digest: string;
   tags: string[];
+  url?: string;
   isInstalled: boolean;
+  isDefault?: boolean;
 }
 
 // New type for cache status

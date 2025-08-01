@@ -97,9 +97,12 @@ export const getAvailableModelsFromRegistryHandler = async (_: Electron.IpcMainE
 // New handler for force refresh (bypasses cache)
 export const forceRefreshRegistryHandler = async (_: Electron.IpcMainEvent) => {
   try {
+    console.log('Force refresh registry handler called');
     const models = await getAvailableModelsFromRegistry(true);
+    console.log(`Force refresh returned ${models.length} models`);
     return models;
   } catch (err) {
+    console.error('Force refresh error:', err);
     handleError(err);
     return [];
   }

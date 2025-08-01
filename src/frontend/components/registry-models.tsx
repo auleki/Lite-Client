@@ -23,6 +23,7 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
   const [isReplacing, setIsReplacing] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [sortBy, setSortBy] = useState<'name' | 'size' | 'popularity'>('name');
+  const [selectedTag, setSelectedTag] = useState<string>('');
   const [pullStatus, setPullStatus] = useState<string>('');
   const [pullProgress, setPullProgress] = useState<number>(0);
   const [canCancel, setCanCancel] = useState<boolean>(true);
@@ -42,9 +43,11 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
     setErrorType(null);
 
     try {
+      console.log(`Loading registry models, forceRefresh: ${forceRefresh}`);
       const models = forceRefresh
         ? await window.backendBridge.ollama.forceRefreshRegistry()
         : await window.backendBridge.ollama.getAvailableModelsFromRegistry();
+      console.log(`Received ${models.length} models from backend`);
       setRegistryModels(models);
 
       // Update cache status
@@ -65,10 +68,38 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
         if (allModels?.models && allModels.models.length > 0) {
           const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:3b');
           if (orcaMini) {
-            setCurrentModel({ ...orcaMini, isDefault: true });
+            // Convert ListResponse model to RegistryModel format
+            setCurrentModel({
+              name: orcaMini.name,
+              description: '', // ModelResponse doesn't have description
+              size: orcaMini.size || 0,
+              modifiedAt: orcaMini.modified_at
+                ? typeof orcaMini.modified_at === 'string'
+                  ? orcaMini.modified_at
+                  : orcaMini.modified_at.toISOString()
+                : '',
+              digest: orcaMini.digest || '',
+              tags: orcaMini.families || [],
+              isInstalled: true,
+              isDefault: true,
+            });
           } else {
             // Use first available model as fallback
-            setCurrentModel({ ...allModels.models[0], isDefault: true });
+            const firstModel = allModels.models[0];
+            setCurrentModel({
+              name: firstModel.name,
+              description: '', // ModelResponse doesn't have description
+              size: firstModel.size || 0,
+              modifiedAt: firstModel.modified_at
+                ? typeof firstModel.modified_at === 'string'
+                  ? firstModel.modified_at
+                  : firstModel.modified_at.toISOString()
+                : '',
+              digest: firstModel.digest || '',
+              tags: firstModel.families || [],
+              isInstalled: true,
+              isDefault: true,
+            });
           }
         }
       }
@@ -106,6 +137,14 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
   };
 
   const handleForceRefresh = async () => {
+    // Clear the cache first to force a fresh fetch
+    try {
+      await window.backendBridge.ollama.clearRegistryCache();
+      console.log('Registry cache cleared');
+    } catch (error) {
+      console.error('Failed to clear cache:', error);
+    }
+
     await loadRegistryModels(true);
   };
 
@@ -212,12 +251,27 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
     }
   };
 
-  const filteredModels = registryModels.filter(
-    (model) =>
+  // Get all unique tags from all models
+  const getAllTags = () => {
+    const allTags = new Set<string>();
+    registryModels.forEach((model) => {
+      model.tags.forEach((tag) => allTags.add(tag));
+    });
+    return Array.from(allTags).sort();
+  };
+
+  const filteredModels = registryModels.filter((model) => {
+    // Text search filter
+    const matchesSearch =
       model.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       model.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      model.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase())),
-  );
+      model.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    // Tag filter
+    const matchesTag = !selectedTag || model.tags.includes(selectedTag);
+
+    return matchesSearch && matchesTag;
+  });
 
   const sortedModels = [...filteredModels].sort((a, b) => {
     switch (sortBy) {
@@ -237,6 +291,7 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
         if (!aPopular && bPopular) return 1;
         return a.name.localeCompare(b.name);
       }
+
       default:
         return 0;
     }
@@ -398,10 +453,10 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
 
         <Registry.HeaderRight>
           <Registry.ViewToggle>
-            <Registry.ViewButton active={viewMode === 'grid'} onClick={() => setViewMode('grid')}>
+            <Registry.ViewButton $active={viewMode === 'grid'} onClick={() => setViewMode('grid')}>
               <Registry.GridIcon />
             </Registry.ViewButton>
-            <Registry.ViewButton active={viewMode === 'list'} onClick={() => setViewMode('list')}>
+            <Registry.ViewButton $active={viewMode === 'list'} onClick={() => setViewMode('list')}>
               <Registry.ListIcon />
             </Registry.ViewButton>
           </Registry.ViewToggle>
@@ -462,6 +517,23 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
             <option value="popularity">Popularity</option>
           </Registry.SortSelect>
         </Registry.SortContainer>
+
+        <Registry.TagFilterContainer>
+          <Registry.TagFilterLabel>Filter by tag:</Registry.TagFilterLabel>
+          <Registry.TagFilterSelect
+            value={selectedTag}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+              setSelectedTag(e.target.value);
+            }}
+          >
+            <option value="">All tags</option>
+            {getAllTags().map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </Registry.TagFilterSelect>
+        </Registry.TagFilterContainer>
       </Registry.Controls>
 
       {/* Error State */}
@@ -478,47 +550,55 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
 
       {/* Models Grid/List */}
       {!error && (
-        <Registry.ModelsContainer viewMode={viewMode}>
-          {sortedModels.length === 0 ? (
-            <Registry.EmptyState>
-              <Registry.EmptyIcon>🔍</Registry.EmptyIcon>
-              <Registry.EmptyTitle>No models found</Registry.EmptyTitle>
-              <Registry.EmptyText>
-                {searchTerm ? 'Try adjusting your search terms' : 'No models available in registry'}
-              </Registry.EmptyText>
-            </Registry.EmptyState>
-          ) : (
-            sortedModels.map((model) => (
-              <Registry.ModelCard
-                key={model.name}
-                viewMode={viewMode}
-                $isCurrentModel={currentModel && currentModel.name === model.name}
-              >
-                {viewMode === 'list' ? (
-                  // List view layout
-                  <>
-                    <Registry.ModelCardContent>
-                      <Registry.ModelCardHeader>
+        <Registry.ModelsWrapper>
+          <Registry.ModelsContainer $viewMode={viewMode}>
+            {sortedModels.length === 0 ? (
+              <Registry.EmptyState>
+                <Registry.EmptyIcon>🔍</Registry.EmptyIcon>
+                <Registry.EmptyTitle>No models found</Registry.EmptyTitle>
+                <Registry.EmptyText>
+                  {searchTerm
+                    ? 'Try adjusting your search terms'
+                    : 'No models available in registry'}
+                </Registry.EmptyText>
+              </Registry.EmptyState>
+            ) : (
+              sortedModels.map((model) => (
+                <Registry.ModelCard
+                  key={model.name}
+                  $viewMode={viewMode}
+                  $isCurrentModel={!!(currentModel && currentModel.name === model.name)}
+                >
+                  {viewMode === 'list' ? (
+                    // List view layout
+                    <>
+                      <Registry.ModelCardContent>
                         <Registry.ModelInfo>
                           <Registry.ModelName>{model.name}</Registry.ModelName>
                           <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
+                          <Registry.SpaceIndicator>
+                            {diskSpaceInfo &&
+                              (diskSpaceInfo.free > model.size ? (
+                                <Registry.SpaceSuccess>
+                                  <Registry.SpaceIcon>✓</Registry.SpaceIcon>
+                                  Enough space
+                                </Registry.SpaceSuccess>
+                              ) : (
+                                <Registry.SpaceError>
+                                  <Registry.SpaceIcon>✗</Registry.SpaceIcon>
+                                  Need{' '}
+                                  {(
+                                    model.size / (1024 * 1024 * 1024) -
+                                    parseFloat(diskSpaceInfo.freeGB)
+                                  ).toFixed(1)}
+                                  GB more
+                                </Registry.SpaceError>
+                              ))}
+                          </Registry.SpaceIndicator>
                         </Registry.ModelInfo>
 
-                        <Registry.ModelStatus>
-                          {model.isInstalled && (
-                            <Registry.InstalledBadge>
-                              <Registry.CheckIcon />
-                              Installed
-                            </Registry.InstalledBadge>
-                          )}
-                        </Registry.ModelStatus>
-                      </Registry.ModelCardHeader>
-
-                      {model.description && (
                         <Registry.ModelDescription>{model.description}</Registry.ModelDescription>
-                      )}
 
-                      {model.tags && model.tags.length > 0 && (
                         <Registry.ModelTags>
                           {model.tags.slice(0, 3).map((tag, index) => (
                             <Registry.Tag key={index}>{tag}</Registry.Tag>
@@ -527,144 +607,138 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
                             <Registry.TagMore>+{model.tags.length - 3}</Registry.TagMore>
                           )}
                         </Registry.ModelTags>
-                      )}
-
-                      <Registry.SpaceIndicator>
-                        {diskSpaceInfo &&
-                          (diskSpaceInfo.free > model.size ? (
-                            <Registry.SpaceSuccess>
-                              <Registry.SpaceIcon>✓</Registry.SpaceIcon>
-                              Enough space
-                            </Registry.SpaceSuccess>
-                          ) : (
-                            <Registry.SpaceError>
-                              <Registry.SpaceIcon>✗</Registry.SpaceIcon>
-                              Need{' '}
-                              {(
-                                model.size / (1024 * 1024 * 1024) -
-                                parseFloat(diskSpaceInfo.freeGB)
-                              ).toFixed(1)}
-                              GB more
-                            </Registry.SpaceError>
-                          ))}
-                      </Registry.SpaceIndicator>
-                    </Registry.ModelCardContent>
-
-                    <Registry.ActionButtons>
-                      <Registry.PullButton
-                        onClick={() => handleModelPull(model.name)}
-                        disabled={
-                          model.isInstalled ||
-                          (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
-                          isReplacing ||
-                          isPulling === model.name
-                        }
-                      >
-                        {model.isInstalled
-                          ? 'Installed'
-                          : isPulling === model.name
-                            ? 'Pulling...'
-                            : 'Pull'}
-                      </Registry.PullButton>
-
-                      {currentModel && currentModel.name !== model.name && (
-                        <Registry.ReplaceButton
-                          onClick={() => handlePullAndReplace(model.name)}
-                          disabled={isReplacing || isPulling === model.name}
-                        >
-                          {isReplacing ? 'Replacing...' : 'Replace'}
-                        </Registry.ReplaceButton>
-                      )}
-                    </Registry.ActionButtons>
-                  </>
-                ) : (
-                  // Grid view layout (original)
-                  <>
-                    <Registry.ModelCardHeader>
-                      <Registry.ModelInfo>
-                        <Registry.ModelName>{model.name}</Registry.ModelName>
-                        <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
-                      </Registry.ModelInfo>
-
-                      <Registry.ModelStatus>
-                        {model.isInstalled && (
-                          <Registry.InstalledBadge>
-                            <Registry.CheckIcon />
-                            Installed
-                          </Registry.InstalledBadge>
-                        )}
-                      </Registry.ModelStatus>
-                    </Registry.ModelCardHeader>
-
-                    {model.description && (
-                      <Registry.ModelDescription>{model.description}</Registry.ModelDescription>
-                    )}
-
-                    {model.tags && model.tags.length > 0 && (
-                      <Registry.ModelTags>
-                        {model.tags.slice(0, 3).map((tag, index) => (
-                          <Registry.Tag key={index}>{tag}</Registry.Tag>
-                        ))}
-                        {model.tags.length > 3 && (
-                          <Registry.TagMore>+{model.tags.length - 3}</Registry.TagMore>
-                        )}
-                      </Registry.ModelTags>
-                    )}
-
-                    <Registry.ModelCardFooter viewMode={viewMode}>
-                      <Registry.SpaceIndicator>
-                        {diskSpaceInfo &&
-                          (diskSpaceInfo.free > model.size ? (
-                            <Registry.SpaceSuccess>
-                              <Registry.SpaceIcon>✓</Registry.SpaceIcon>
-                              Enough space
-                            </Registry.SpaceSuccess>
-                          ) : (
-                            <Registry.SpaceError>
-                              <Registry.SpaceIcon>✗</Registry.SpaceIcon>
-                              Need{' '}
-                              {(
-                                model.size / (1024 * 1024 * 1024) -
-                                parseFloat(diskSpaceInfo.freeGB)
-                              ).toFixed(1)}
-                              GB more
-                            </Registry.SpaceError>
-                          ))}
-                      </Registry.SpaceIndicator>
+                      </Registry.ModelCardContent>
 
                       <Registry.ActionButtons>
-                        <Registry.PullButton
-                          onClick={() => handleModelPull(model.name)}
-                          disabled={
-                            model.isInstalled ||
-                            (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
-                            isReplacing ||
-                            isPulling === model.name
-                          }
-                        >
-                          {model.isInstalled
-                            ? 'Installed'
-                            : isPulling === model.name
-                              ? 'Pulling...'
-                              : 'Pull'}
-                        </Registry.PullButton>
-
-                        {currentModel && currentModel.name !== model.name && (
-                          <Registry.ReplaceButton
-                            onClick={() => handlePullAndReplace(model.name)}
-                            disabled={isReplacing || isPulling === model.name}
+                        {model.url && (
+                          <Registry.ViewActionButton
+                            href={model.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
                           >
-                            {isReplacing ? 'Replacing...' : 'Replace'}
-                          </Registry.ReplaceButton>
+                            <Registry.UrlIcon>↗</Registry.UrlIcon>
+                            View
+                          </Registry.ViewActionButton>
+                        )}
+                        {currentModel && currentModel.name === model.name ? (
+                          <Registry.CurrentModelButton disabled>
+                            Current
+                          </Registry.CurrentModelButton>
+                        ) : (
+                          <>
+                            <Registry.PullButton
+                              onClick={() => handleModelPull(model.name)}
+                              disabled={
+                                model.isInstalled ||
+                                (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
+                                isReplacing ||
+                                isPulling === model.name
+                              }
+                            >
+                              {model.isInstalled
+                                ? '✓ Installed'
+                                : isPulling === model.name
+                                  ? '⏳ Pulling...'
+                                  : '↓ Pull'}
+                            </Registry.PullButton>
+                            <Registry.ReplaceButton
+                              onClick={() => handlePullAndReplace(model.name)}
+                              disabled={isReplacing || isPulling === model.name}
+                            >
+                              {isReplacing ? '⏳ Replacing...' : '⚡ Replace'}
+                            </Registry.ReplaceButton>
+                          </>
                         )}
                       </Registry.ActionButtons>
-                    </Registry.ModelCardFooter>
-                  </>
-                )}
-              </Registry.ModelCard>
-            ))
-          )}
-        </Registry.ModelsContainer>
+                    </>
+                  ) : (
+                    // Grid view layout (original)
+                    <>
+                      <Registry.ModelCardHeader>
+                        <Registry.ModelInfo>
+                          <Registry.ModelName>{model.name}</Registry.ModelName>
+                          <Registry.ModelSize>{formatSize(model.size)}</Registry.ModelSize>
+                          <Registry.SpaceIndicator>
+                            {diskSpaceInfo &&
+                              (diskSpaceInfo.free > model.size ? (
+                                <Registry.SpaceSuccess>
+                                  <Registry.SpaceIcon>✓</Registry.SpaceIcon>
+                                  Enough space
+                                </Registry.SpaceSuccess>
+                              ) : (
+                                <Registry.SpaceError>
+                                  <Registry.SpaceIcon>✗</Registry.SpaceIcon>
+                                  Need{' '}
+                                  {(
+                                    model.size / (1024 * 1024 * 1024) -
+                                    parseFloat(diskSpaceInfo.freeGB)
+                                  ).toFixed(1)}
+                                  GB more
+                                </Registry.SpaceError>
+                              ))}
+                          </Registry.SpaceIndicator>
+                        </Registry.ModelInfo>
+
+                        <Registry.ModelDescription>{model.description}</Registry.ModelDescription>
+
+                        <Registry.ModelTags>
+                          {model.tags.slice(0, 3).map((tag, index) => (
+                            <Registry.Tag key={index}>{tag}</Registry.Tag>
+                          ))}
+                          {model.tags.length > 3 && (
+                            <Registry.TagMore>+{model.tags.length - 3}</Registry.TagMore>
+                          )}
+                        </Registry.ModelTags>
+
+                        <Registry.ActionButtons>
+                          {model.url && (
+                            <Registry.UrlLink
+                              href={model.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Registry.UrlIcon>↗</Registry.UrlIcon>
+                              View
+                            </Registry.UrlLink>
+                          )}
+                          {currentModel && currentModel.name === model.name ? (
+                            <Registry.CurrentModelButton disabled>
+                              Current
+                            </Registry.CurrentModelButton>
+                          ) : (
+                            <>
+                              <Registry.PullButton
+                                onClick={() => handleModelPull(model.name)}
+                                disabled={
+                                  model.isInstalled ||
+                                  (diskSpaceInfo ? diskSpaceInfo.free <= model.size : false) ||
+                                  isReplacing ||
+                                  isPulling === model.name
+                                }
+                              >
+                                {model.isInstalled
+                                  ? '✓ Installed'
+                                  : isPulling === model.name
+                                    ? '⏳ Pulling...'
+                                    : '↓ Pull'}
+                              </Registry.PullButton>
+                              <Registry.ReplaceButton
+                                onClick={() => handlePullAndReplace(model.name)}
+                                disabled={isReplacing || isPulling === model.name}
+                              >
+                                {isReplacing ? '⏳ Replacing...' : '⚡ Replace'}
+                              </Registry.ReplaceButton>
+                            </>
+                          )}
+                        </Registry.ActionButtons>
+                      </Registry.ModelCardHeader>
+                    </>
+                  )}
+                </Registry.ModelCard>
+              ))
+            )}
+          </Registry.ModelsContainer>
+        </Registry.ModelsWrapper>
       )}
     </Registry.Container>
   );
@@ -678,6 +752,7 @@ const Registry = {
     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
     color: #e2e8f0;
     overflow: hidden;
+    position: relative;
   `,
 
   // Header Section
@@ -744,7 +819,7 @@ const Registry = {
     border: 1px solid rgba(148, 163, 184, 0.2);
   `,
 
-  ViewButton: Styled.button<{ active: boolean }>`
+  ViewButton: Styled.button<{ $active: boolean }>`
     display: flex;
     align-items: center;
     justify-content: center;
@@ -752,13 +827,13 @@ const Registry = {
     height: 36px;
     border: none;
     border-radius: 6px;
-    background: ${(props) => (props.active ? '#10b981' : 'transparent')};
-    color: ${(props) => (props.active ? '#ffffff' : '#94a3b8')};
+    background: ${(props) => (props.$active ? '#10b981' : 'transparent')};
+    color: ${(props) => (props.$active ? '#ffffff' : '#94a3b8')};
     cursor: pointer;
     transition: all 0.2s ease;
 
     &:hover {
-      background: ${(props) => (props.active ? '#059669' : 'rgba(148, 163, 184, 0.1)')};
+      background: ${(props) => (props.$active ? '#059669' : 'rgba(148, 163, 184, 0.1)')};
     }
   `,
 
@@ -905,6 +980,34 @@ const Registry = {
     }
   `,
 
+  TagFilterContainer: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `,
+
+  TagFilterLabel: Styled.span`
+    font-size: 14px;
+    color: #94a3b8;
+    font-weight: 500;
+  `,
+
+  TagFilterSelect: Styled.select`
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.8);
+    color: #e2e8f0;
+    font-size: 14px;
+    cursor: pointer;
+
+    &:focus {
+      outline: none;
+      border-color: #10b981;
+    }
+  `,
+
   // Error State
   ErrorContainer: Styled.div`
     display: flex;
@@ -955,37 +1058,82 @@ const Registry = {
     }
   `,
 
-  // Models Container
-  ModelsContainer: Styled.div<{ viewMode: 'grid' | 'list' }>`
+  // Models Wrapper
+  ModelsWrapper: Styled.div`
     flex: 1;
-    padding: 20px 32px;
-    overflow-y: auto;
-    display: ${(props) => (props.viewMode === 'grid' ? 'grid' : 'flex')};
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  `,
+
+  // Models Container
+  ModelsContainer: Styled.div<{ $viewMode: 'grid' | 'list' }>`
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 20px 32px 20px 24px; /* Reduced right padding to make room for scrollbar */
+    overflow-y: scroll; /* Force scroll instead of auto */
+    display: ${(props) => (props.$viewMode === 'grid' ? 'grid' : 'flex')};
+    
+    /* Force scrollbar to be visible */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+    
+    /* Webkit scrollbar styling - override global hidden scrollbar */
+    &::-webkit-scrollbar {
+      width: 8px !important;
+      background: transparent !important;
+      display: block !important;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: transparent !important;
+      border-radius: 4px;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.4) !important;
+      border-radius: 4px;
+      border: none;
+    }
+    
+    &::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.6) !important;
+    }
+    
+    &::-webkit-scrollbar-corner {
+      background: transparent !important;
+    }
+    
     ${(props) =>
-      props.viewMode === 'grid'
+      props.$viewMode === 'grid'
         ? `
       grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
       gap: 20px;
     `
         : `
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
     `}
   `,
 
   // Model Card
-  ModelCard: Styled.div<{ viewMode: 'grid' | 'list'; $isCurrentModel?: boolean }>`
+  ModelCard: Styled.div<{ $viewMode: 'grid' | 'list'; $isCurrentModel?: boolean }>`
     background: ${(props) => (props.$isCurrentModel ? 'rgba(16, 185, 129, 0.1)' : 'rgba(30, 41, 59, 0.8)')};
     border: 1px solid ${(props) => (props.$isCurrentModel ? 'rgba(16, 185, 129, 0.5)' : 'rgba(148, 163, 184, 0.1)')};
     border-radius: 12px;
-    padding: ${(props) => (props.viewMode === 'grid' ? '20px' : '16px')};
+    padding: ${(props) => (props.$viewMode === 'grid' ? '20px' : '16px')};
     transition: all 0.2s ease;
     ${(props) =>
-      props.viewMode === 'list'
+      props.$viewMode === 'list'
         ? `
       display: flex;
-      align-items: flex-start;
-      gap: 20px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
     `
         : ''}
 
@@ -1019,33 +1167,49 @@ const Registry = {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 12px;
+    margin-bottom: 6px;
   `,
 
   ModelCardContent: Styled.div`
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
   `,
 
-  ModelInfo: Styled.div`
+  ModelDetails: Styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     flex: 1;
   `,
 
+  ModelActions: Styled.div`
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+  `,
+
+  ModelInfo: Styled.div`
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  `,
+
   ModelName: Styled.h3`
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
     color: #f1f5f9;
-    margin: 0 0 4px 0;
+    margin: 0;
   `,
 
   ModelSize: Styled.span`
-    font-size: 14px;
+    font-size: 12px;
     color: #94a3b8;
     background: rgba(148, 163, 184, 0.1);
-    padding: 4px 8px;
-    border-radius: 6px;
+    padding: 2px 6px;
+    border-radius: 4px;
   `,
 
   ModelStatus: Styled.div``,
@@ -1068,89 +1232,168 @@ const Registry = {
 
   ModelDescription: Styled.p`
     color: #cbd5e1;
-    font-size: 14px;
-    line-height: 1.5;
-    margin: 0 0 12px 0;
+    font-size: 13px;
+    line-height: 1.4;
+    margin: 0;
+  `,
+
+  ModelUrl: Styled.div`
+    margin-bottom: 0;
+  `,
+
+  UrlIcon: Styled.span`
+    font-size: 11px;
+    margin-right: 6px;
+  `,
+
+  UrlLink: Styled.a`
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border: 1px solid rgba(96, 165, 250, 0.3);
+    border-radius: 6px;
+    background: rgba(96, 165, 250, 0.1);
+    color: #60a5fa;
+    font-size: 12px;
+    font-weight: 500;
+    height: 40px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    margin: 0;
+    box-sizing: border-box;
+    gap: 6px;
+    width: 90px;
+    white-space: nowrap;
+    &:hover:not(:disabled) {
+      background: rgba(96, 165, 250, 0.2);
+      color: #3b82f6;
+    }
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   `,
 
   ModelTags: Styled.div`
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 16px;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+    width: 100%;
   `,
 
   Tag: Styled.span`
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(16, 185, 129, 0.08);
     color: #10b981;
     font-size: 12px;
     font-weight: 500;
     padding: 4px 8px;
-    border-radius: 12px;
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 6px;
+    border: 1px solid rgba(16, 185, 129, 0.15);
   `,
 
   TagMore: Styled.span`
-    background: rgba(148, 163, 184, 0.1);
+    background: rgba(148, 163, 184, 0.08);
     color: #94a3b8;
     font-size: 12px;
     font-weight: 500;
     padding: 4px 8px;
-    border-radius: 12px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 6px;
+    border: 1px solid rgba(148, 163, 184, 0.15);
   `,
 
-  ModelCardFooter: Styled.div<{ viewMode?: 'grid' | 'list' }>`
+  ModelCardFooter: Styled.div<{ $viewMode?: 'grid' | 'list' }>`
     display: flex;
     justify-content: space-between;
-    align-items: ${(props) => (props.viewMode === 'list' ? 'flex-start' : 'center')};
+    align-items: ${(props) => (props.$viewMode === 'list' ? 'flex-start' : 'center')};
   `,
 
-  SpaceIndicator: Styled.div``,
-
-  SpaceSuccess: Styled.div`
+  SpaceIndicator: Styled.div`
     display: flex;
     align-items: center;
     gap: 4px;
-    color: #10b981;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
+  `,
+
+  SpaceSuccess: Styled.div`
+    color: #10b981;
   `,
 
   SpaceError: Styled.div`
-    display: flex;
-    align-items: center;
-    gap: 4px;
     color: #f87171;
-    font-size: 12px;
-    font-weight: 500;
   `,
 
   SpaceIcon: Styled.span`
-    font-size: 12px;
+    font-size: 11px;
   `,
 
   ActionButtons: Styled.div`
     display: flex;
     gap: 8px;
-    align-self: flex-start;
+    flex-shrink: 0;
+  `,
+
+  ViewActionButton: Styled.a`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border: 1px solid rgba(96, 165, 250, 0.3);
+    border-radius: 6px;
+    background: rgba(96, 165, 250, 0.1);
+    color: #60a5fa;
+    font-size: 12px;
+    font-weight: 500;
+    height: 36px;
+    width: 85px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    gap: 6px;
+    text-decoration: none;
+    box-sizing: border-box;
+    
+    &:hover:not(:disabled) {
+      background: rgba(96, 165, 250, 0.2);
+      color: #3b82f6;
+      transform: translateY(-1px);
+    }
+    
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   `,
 
   PullButton: Styled.button`
-    padding: 8px 16px;
-    border: 1px solid rgba(16, 185, 129, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border: 1px solid rgba(34, 197, 94, 0.3);
     border-radius: 6px;
-    background: rgba(16, 185, 129, 0.1);
-    color: #10b981;
+    background: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
     font-size: 12px;
     font-weight: 500;
+    height: 36px;
+    width: 85px;
     cursor: pointer;
     transition: all 0.2s ease;
-
+    gap: 6px;
+    text-decoration: none;
+    box-sizing: border-box;
+    
     &:hover:not(:disabled) {
-      background: rgba(16, 185, 129, 0.2);
+      background: rgba(34, 197, 94, 0.2);
+      color: #16a34a;
+      transform: translateY(-1px);
     }
-
+    
     &:disabled {
       opacity: 0.5;
       cursor: not-allowed;
@@ -1158,53 +1401,55 @@ const Registry = {
   `,
 
   ReplaceButton: Styled.button`
-    padding: 8px 16px;
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border: 1px solid rgba(249, 115, 22, 0.3);
     border-radius: 6px;
-    background: rgba(245, 158, 11, 0.1);
-    color: #f59e0b;
+    background: rgba(249, 115, 22, 0.1);
+    color: #f97316;
     font-size: 12px;
     font-weight: 500;
+    height: 36px;
+    width: 85px;
     cursor: pointer;
     transition: all 0.2s ease;
-
+    gap: 6px;
+    text-decoration: none;
+    box-sizing: border-box;
+    
     &:hover:not(:disabled) {
-      background: rgba(245, 158, 11, 0.2);
+      background: rgba(249, 115, 22, 0.2);
+      color: #ea580c;
+      transform: translateY(-1px);
     }
-
+    
     &:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
   `,
 
-  // Loading State
-  LoadingState: Styled.div`
+  CurrentModelButton: Styled.button`
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
-    gap: 16px;
-  `,
-
-  LoadingSpinner: Styled.div`
-    width: 40px;
-    height: 40px;
-    border: 3px solid rgba(148, 163, 184, 0.2);
-    border-top: 3px solid #10b981;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `,
-
-  LoadingText: Styled.div`
-    color: #94a3b8;
-    font-size: 16px;
+    padding: 8px 12px;
+    border: 1px solid rgba(16, 185, 129, 0.5);
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+    font-size: 12px;
+    font-weight: 500;
+    height: 36px;
+    width: 85px;
+    cursor: not-allowed;
+    transition: all 0.2s ease;
+    gap: 6px;
+    text-decoration: none;
+    box-sizing: border-box;
+    opacity: 0.8;
   `,
 
   // Empty State
@@ -1235,49 +1480,75 @@ const Registry = {
     margin: 0;
   `,
 
-  // Pull Progress Overlay
+  // Loading State
+  LoadingState: Styled.div`
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+  `,
+
+  LoadingSpinner: Styled.div`
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(148, 163, 184, 0.2);
+    border-top: 3px solid #10b981;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `,
+
+  LoadingText: Styled.span`
+    color: #94a3b8;
+    font-size: 14px;
+  `,
+
+  // Pull Modal
   PullOverlay: Styled.div`
     position: fixed;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
     display: flex;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
     z-index: 1000;
   `,
 
   PullModal: Styled.div`
-    background: #1e293b;
+    background: rgba(30, 41, 59, 0.95);
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 12px;
-    padding: 32px;
+    padding: 24px;
+    max-width: 400px;
+    width: 90%;
     text-align: center;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 20px;
   `,
 
   PullIcon: Styled.div`
     font-size: 48px;
-    color: #10b981;
+    margin-bottom: 16px;
   `,
 
-  PullTitle: Styled.h2`
-    font-size: 24px;
-    font-weight: 700;
+  PullTitle: Styled.h3`
     color: #f1f5f9;
-    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
   `,
 
   PullSubtitle: Styled.p`
-    font-size: 16px;
     color: #94a3b8;
-    margin: 0;
+    font-size: 14px;
+    margin: 0 0 20px 0;
   `,
 
   StageIndicator: Styled.div`
@@ -1295,7 +1566,6 @@ const Registry = {
     font-size: 14px;
     font-weight: ${(props) => (props.$active ? '600' : '500')};
     opacity: ${(props) => (props.$active ? 1 : 0.7)};
-    text-shadow: ${(props) => (props.$active ? '0 0 5px rgba(16, 185, 129, 0.5)' : 'none')};
   `,
 
   StageDot: Styled.div<{ $active: boolean }>`
@@ -1317,6 +1587,7 @@ const Registry = {
     width: 100%;
     max-width: 250px;
     position: relative;
+    margin: 0 auto 20px;
   `,
 
   ProgressBar: Styled.div`
@@ -1348,13 +1619,20 @@ const Registry = {
   StatusText: Styled.p`
     font-size: 14px;
     color: #94a3b8;
-    margin: 0;
+    margin: 0 0 20px 0;
+  `,
+
+  PullDescription: Styled.p`
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0 0 20px 0;
   `,
 
   DetailsContainer: Styled.div`
     display: flex;
-    justify-content: space-around;
-    width: 100%;
+    flex-direction: column;
+    gap: 8px;
     margin-bottom: 20px;
   `,
 
@@ -1363,24 +1641,25 @@ const Registry = {
     align-items: center;
     gap: 8px;
     color: #94a3b8;
-    font-size: 14px;
+    font-size: 12px;
   `,
 
   DetailIcon: Styled.span`
-    font-size: 16px;
+    font-size: 14px;
   `,
 
   DetailText: Styled.span`
-    font-weight: 500;
+    color: #cbd5e1;
   `,
 
   PullSpinner: Styled.div`
-    width: 40px;
-    height: 40px;
-    border: 3px solid rgba(148, 163, 184, 0.2);
-    border-top: 3px solid #10b981;
+    width: 32px;
+    height: 32px;
+    border: 2px solid rgba(148, 163, 184, 0.2);
+    border-top: 2px solid #10b981;
     border-radius: 50%;
     animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
 
     @keyframes spin {
       0% { transform: rotate(0deg); }
@@ -1389,33 +1668,28 @@ const Registry = {
   `,
 
   CancelButton: Styled.button`
-    padding: 12px 24px;
-    border: 2px solid rgba(239, 68, 68, 0.5);
-    border-radius: 8px;
-    background: rgba(239, 68, 68, 0.15);
+    padding: 8px 16px;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.1);
     color: #fca5a5;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    margin-top: 10px;
 
     &:hover {
-      background: rgba(239, 68, 68, 0.25);
-      border-color: rgba(239, 68, 68, 0.7);
-      transform: translateY(-1px);
-    }
-
-    &:active {
-      transform: translateY(0);
+      background: rgba(239, 68, 68, 0.2);
     }
   `,
 
-  CancelWarning: Styled.p`
-    font-size: 12px;
+  CancelWarning: Styled.div`
     color: #fca5a5;
-    margin-top: 10px;
-    text-align: center;
+    font-size: 11px;
+    margin-top: 12px;
+    padding: 8px;
+    background: rgba(239, 68, 68, 0.1);
+    border-radius: 4px;
   `,
 };
 
