@@ -16,7 +16,8 @@ import {
   deleteModel,
   pullAndReplaceModel,
 } from './services/ollama';
-import { OllamaQuestion } from './types';
+import { getInferenceManager } from './services/inference-manager';
+import { OllamaQuestion, InferenceMode, MorpheusAPIConfig } from './types';
 import { saveModelPathToStorage, getModelPathFromStorage } from './storage';
 import { logger } from './services/logger';
 
@@ -178,4 +179,133 @@ const handleError = (err: Error) => {
   console.error(err);
 
   // log with winston here
+};
+
+// =====================================
+// Inference Management Handlers
+// =====================================
+
+export const getInferenceModeHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const manager = getInferenceManager();
+    return manager.getInferenceMode();
+  } catch (err) {
+    handleError(err);
+    return 'local'; // Default fallback
+  }
+};
+
+export const setInferenceModeHandler = async (_: Electron.IpcMainEvent, mode: InferenceMode) => {
+  try {
+    const manager = getInferenceManager();
+    await manager.setInferenceMode(mode);
+    return true;
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+};
+
+export const getMorpheusConfigHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const manager = getInferenceManager();
+    return manager.getMorpheusConfig();
+  } catch (err) {
+    handleError(err);
+    return null;
+  }
+};
+
+export const setMorpheusConfigHandler = async (
+  _: Electron.IpcMainEvent,
+  config: MorpheusAPIConfig,
+) => {
+  try {
+    const manager = getInferenceManager();
+    await manager.setMorpheusConfig(config);
+    return true;
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+};
+
+export const testMorpheusConnectionHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const manager = getInferenceManager();
+    return await manager.testMorpheusConnection();
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+};
+
+// =====================================
+// Morpheus API Handlers
+// =====================================
+
+export const getMorpheusModelsHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const manager = getInferenceManager();
+    return await manager.getRemoteModels();
+  } catch (err) {
+    handleError(err);
+    return [];
+  }
+};
+
+export const askMorpheusHandler = async (
+  _: Electron.IpcMainEvent,
+  query: string,
+  model?: string,
+) => {
+  try {
+    const manager = getInferenceManager();
+    const result = await manager.askWithSource(query, 'remote', model);
+    return result.response;
+  } catch (err) {
+    handleError(err);
+    throw err;
+  }
+};
+
+// =====================================
+// Unified Inference Handler
+// =====================================
+
+export const askAIHandler = async (
+  _: Electron.IpcMainEvent,
+  query: string,
+  model?: string,
+  forceSource?: 'local' | 'remote',
+) => {
+  try {
+    const manager = getInferenceManager();
+
+    let result;
+    if (forceSource) {
+      result = await manager.askWithSource(query, forceSource, model);
+    } else {
+      result = await manager.ask(query, model);
+    }
+
+    return {
+      response: result.response,
+      source: result.source,
+      model: result.model,
+    };
+  } catch (err) {
+    handleError(err);
+    throw err;
+  }
+};
+
+export const getAvailableInferenceModelsHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const manager = getInferenceManager();
+    return await manager.getAvailableModels();
+  } catch (err) {
+    handleError(err);
+    return [];
+  }
 };

@@ -1,10 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import Styled from 'styled-components';
 
+// Types
+import { InferenceMode, MorpheusAPIConfig } from '../renderer';
+
 const SettingsView = (): React.JSX.Element => {
   const [ollamaPath, setOllamaPath] = useState<string>('');
   const [modelsPath, setModelsPath] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Inference settings
+  const [inferenceMode, setInferenceMode] = useState<InferenceMode>('local');
+  const [morpheusConfig, setMorpheusConfig] = useState<MorpheusAPIConfig>({
+    apiKey: '',
+    baseUrl: 'https://api.mor.org/api/v1',
+    defaultModel: 'gpt-3.5-turbo',
+  });
+  const [isConnectionTesting, setIsConnectionTesting] = useState<boolean>(false);
+  const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'success' | 'failed'>(
+    'unknown',
+  );
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -12,8 +27,17 @@ const SettingsView = (): React.JSX.Element => {
         // Load current settings
         const currentModelsPath = await window.backendBridge.main.getFolderPath();
 
+        // Load inference settings
+        const currentMode = await window.backendBridge.inference.getMode();
+        const currentConfig = await window.backendBridge.inference.getMorpheusConfig();
+
         setOllamaPath('Default'); // Ollama path is not configurable in this version
         setModelsPath(currentModelsPath || 'Default');
+        setInferenceMode(currentMode);
+
+        if (currentConfig) {
+          setMorpheusConfig(currentConfig);
+        }
       } catch (error) {
         console.error('Failed to load settings:', error);
       } finally {
@@ -48,6 +72,58 @@ const SettingsView = (): React.JSX.Element => {
     }
   };
 
+  // Inference handlers
+  const handleInferenceModeChange = async (mode: InferenceMode) => {
+    try {
+      await window.backendBridge.inference.setMode(mode);
+      setInferenceMode(mode);
+    } catch (error) {
+      console.error('Failed to set inference mode:', error);
+      alert('Failed to update inference mode. Please try again.');
+    }
+  };
+
+  const handleMorpheusConfigSave = async () => {
+    try {
+      await window.backendBridge.inference.setMorpheusConfig(morpheusConfig);
+      setConnectionStatus('unknown');
+      alert('Configuration saved successfully!');
+    } catch (error) {
+      console.error('Failed to save Morpheus config:', error);
+      alert('Failed to save configuration. Please try again.');
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!morpheusConfig.apiKey.trim()) {
+      alert('Please enter an API key first.');
+      return;
+    }
+
+    setIsConnectionTesting(true);
+    setConnectionStatus('unknown');
+
+    try {
+      // Save config first, then test
+      await window.backendBridge.inference.setMorpheusConfig(morpheusConfig);
+      const isConnected = await window.backendBridge.inference.testMorpheusConnection();
+
+      setConnectionStatus(isConnected ? 'success' : 'failed');
+
+      if (isConnected) {
+        alert('Connection successful! Remote inference is ready to use.');
+      } else {
+        alert('Connection failed. Please check your API key and try again.');
+      }
+    } catch (error) {
+      console.error('Failed to test connection:', error);
+      setConnectionStatus('failed');
+      alert('Connection test failed. Please check your configuration.');
+    } finally {
+      setIsConnectionTesting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Settings.Layout>
@@ -76,6 +152,103 @@ const SettingsView = (): React.JSX.Element => {
           <Settings.SettingLabel>Models Path:</Settings.SettingLabel>
           <Settings.SettingValue>{modelsPath}</Settings.SettingValue>
         </Settings.SettingRow>
+      </Settings.Section>
+
+      <Settings.Section>
+        <Settings.SectionTitle>Remote Inference (Morpheus API)</Settings.SectionTitle>
+
+        <Settings.SettingRow>
+          <Settings.SettingLabel>Default Mode:</Settings.SettingLabel>
+          <Settings.ModeToggle>
+            <Settings.ModeButton
+              $active={inferenceMode === 'local'}
+              onClick={() => handleInferenceModeChange('local')}
+            >
+              🏠 Local
+            </Settings.ModeButton>
+            <Settings.ModeButton
+              $active={inferenceMode === 'remote'}
+              onClick={() => handleInferenceModeChange('remote')}
+            >
+              ☁️ Remote
+            </Settings.ModeButton>
+          </Settings.ModeToggle>
+        </Settings.SettingRow>
+
+        <Settings.SettingRow>
+          <Settings.SettingLabel>API Endpoint:</Settings.SettingLabel>
+          <Settings.InputField
+            type="text"
+            value={morpheusConfig.baseUrl || ''}
+            onChange={(e) => setMorpheusConfig({ ...morpheusConfig, baseUrl: e.target.value })}
+            placeholder="https://api.mor.org/api/v1"
+          />
+        </Settings.SettingRow>
+
+        <Settings.SettingRow>
+          <Settings.SettingLabel>API Key:</Settings.SettingLabel>
+          <Settings.InputField
+            type="password"
+            value={morpheusConfig.apiKey}
+            onChange={(e) => setMorpheusConfig({ ...morpheusConfig, apiKey: e.target.value })}
+            placeholder="Enter your Morpheus API key"
+          />
+        </Settings.SettingRow>
+
+        <Settings.SettingRow>
+          <Settings.SettingLabel>Default Model:</Settings.SettingLabel>
+          <Settings.InputField
+            type="text"
+            value={morpheusConfig.defaultModel || ''}
+            onChange={(e) => setMorpheusConfig({ ...morpheusConfig, defaultModel: e.target.value })}
+            placeholder="gpt-3.5-turbo"
+          />
+        </Settings.SettingRow>
+
+        <Settings.ApiActions>
+          <Settings.ActionButton onClick={handleMorpheusConfigSave}>
+            <Settings.ButtonIcon>💾</Settings.ButtonIcon>
+            <Settings.ButtonText>Save Configuration</Settings.ButtonText>
+          </Settings.ActionButton>
+
+          <Settings.TestButton
+            onClick={handleTestConnection}
+            disabled={isConnectionTesting}
+            $status={connectionStatus}
+          >
+            <Settings.ButtonIcon>
+              {isConnectionTesting
+                ? '⏳'
+                : connectionStatus === 'success'
+                  ? '✅'
+                  : connectionStatus === 'failed'
+                    ? '❌'
+                    : '🔌'}
+            </Settings.ButtonIcon>
+            <Settings.ButtonText>
+              {isConnectionTesting ? 'Testing...' : 'Test Connection'}
+            </Settings.ButtonText>
+          </Settings.TestButton>
+        </Settings.ApiActions>
+
+        <Settings.ApiInfo>
+          <Settings.InfoText>
+            💡 Get your API key at{' '}
+            <a href="https://openbeta.mor.org/docs" target="_blank" rel="noopener noreferrer">
+              openbeta.mor.org
+            </a>
+          </Settings.InfoText>
+          {connectionStatus === 'success' && (
+            <Settings.SuccessText>
+              ✅ Connection verified - Remote inference ready!
+            </Settings.SuccessText>
+          )}
+          {connectionStatus === 'failed' && (
+            <Settings.ErrorText>
+              ❌ Connection failed - Please check your API key
+            </Settings.ErrorText>
+          )}
+        </Settings.ApiInfo>
       </Settings.Section>
 
       <Settings.Section>
@@ -230,6 +403,131 @@ const Settings = {
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: 1rem;
     text-align: center;
+  `,
+
+  // Remote Inference styles
+  ModeToggle: Styled.div`
+    display: flex;
+    gap: 8px;
+  `,
+
+  ModeButton: Styled.button<{ $active: boolean }>`
+    padding: 8px 16px;
+    border: 2px solid ${({ $active }) => ($active ? '#179C65' : '#4A90E2')};
+    border-radius: 8px;
+    background: ${({ $active }) =>
+      $active
+        ? 'linear-gradient(135deg, #179C65, #20B574)'
+        : 'linear-gradient(135deg, #4A90E2, #5BA2F0)'};
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    outline: none;
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+  `,
+
+  InputField: Styled.input`
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    color: ${(props) => props.theme.colors.notice};
+    font-size: 0.9rem;
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    width: 250px;
+    outline: none;
+
+    &:focus {
+      border-color: ${(props) => props.theme.colors.emerald};
+      box-shadow: 0 0 0 2px rgba(23, 156, 101, 0.2);
+    }
+
+    &::placeholder {
+      color: rgba(148, 163, 184, 0.6);
+    }
+  `,
+
+  ApiActions: Styled.div`
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  `,
+
+  TestButton: Styled.button<{ $status: 'unknown' | 'success' | 'failed'; disabled: boolean }>`
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    background: ${({ $status }) =>
+      $status === 'success'
+        ? 'rgba(34, 197, 94, 0.1)'
+        : $status === 'failed'
+          ? 'rgba(239, 68, 68, 0.1)'
+          : 'rgba(59, 130, 246, 0.1)'};
+    border: 1px solid ${({ $status }) =>
+      $status === 'success'
+        ? 'rgba(34, 197, 94, 0.3)'
+        : $status === 'failed'
+          ? 'rgba(239, 68, 68, 0.3)'
+          : 'rgba(59, 130, 246, 0.3)'};
+    border-radius: 10px;
+    color: ${({ $status }) =>
+      $status === 'success' ? '#22c55e' : $status === 'failed' ? '#ef4444' : '#3b82f6'};
+    cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
+    transition: all 0.3s ease;
+    opacity: ${({ disabled }) => (disabled ? 0.6 : 1)};
+
+    &:hover:not(:disabled) {
+      background: ${({ $status }) =>
+        $status === 'success'
+          ? 'rgba(34, 197, 94, 0.2)'
+          : $status === 'failed'
+            ? 'rgba(239, 68, 68, 0.2)'
+            : 'rgba(59, 130, 246, 0.2)'};
+      transform: translateY(-1px);
+    }
+  `,
+
+  ApiInfo: Styled.div`
+    margin-top: 15px;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    border-left: 4px solid ${(props) => props.theme.colors.emerald};
+  `,
+
+  InfoText: Styled.p`
+    color: ${(props) => props.theme.colors.notice};
+    font-size: 0.9rem;
+    margin: 0 0 8px 0;
+    
+    a {
+      color: ${(props) => props.theme.colors.emerald};
+      text-decoration: none;
+      
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  `,
+
+  SuccessText: Styled.p`
+    color: #22c55e;
+    font-size: 0.9rem;
+    margin: 0;
+    font-weight: 500;
+  `,
+
+  ErrorText: Styled.p`
+    color: #ef4444;
+    font-size: 0.9rem;
+    margin: 0;
+    font-weight: 500;
   `,
 };
 

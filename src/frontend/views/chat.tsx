@@ -4,8 +4,12 @@ import Styled from 'styled-components';
 import { useSDK } from '@metamask/sdk-react';
 import { ThreeDots } from 'react-loader-spinner';
 
+// components
+import InferenceModeButton from '../components/buttons/inference-mode-button';
+
 // types and helpers
 import { AIMessage } from '../types';
+import { InferenceMode, InferenceResult } from '../renderer';
 import { OllamaChannel } from './../../events';
 import { useAIMessagesContext } from '../contexts';
 
@@ -17,33 +21,49 @@ import {
 import { parseResponse } from '../utils/utils';
 import { ActionParams } from '../utils/types';
 
+// Enhanced AIMessage type to include source
+interface EnhancedAIMessage extends AIMessage {
+  source?: 'local' | 'remote';
+  model?: string;
+}
+
 const ChatView = (): React.JSX.Element => {
   const [selectedModel, setSelectedModel] = useState<string>('llama2');
   const [dialogueEntries, setDialogueEntries] = useAIMessagesContext();
   const [inputValue, setInputValue] = useState('');
-  const [currentQuestion, setCurrentQuestion] = useState<AIMessage>();
+  const [currentQuestion, setCurrentQuestion] = useState<EnhancedAIMessage>();
   const [isOllamaBeingPolled, setIsOllamaBeingPolled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { provider, account } = useSDK();
 
+  // New inference mode state
+  const [inferenceMode, setInferenceMode] = useState<InferenceMode>('local');
+  const [currentSource, setCurrentSource] = useState<'local' | 'remote'>('local');
+
   const chatMainRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
 
-  // Load current model on component mount
+  // Load current model and inference mode on component mount
   useEffect(() => {
-    const loadCurrentModel = async () => {
+    const loadInitialSettings = async () => {
       try {
+        // Load current model
         const model = await window.backendBridge.ollama.getCurrentModel();
         if (model?.name) {
           setSelectedModel(model.name);
         }
+
+        // Load inference mode
+        const mode = await window.backendBridge.inference.getMode();
+        setInferenceMode(mode);
+        setCurrentSource(mode);
       } catch (error) {
-        console.error('Failed to load current model:', error);
+        console.error('Failed to load initial settings:', error);
       }
     };
 
-    loadCurrentModel();
+    loadInitialSettings();
   }, []);
 
   useEffect(() => {
@@ -90,12 +110,37 @@ const ChatView = (): React.JSX.Element => {
   }, [dialogueEntries]);
 
   //Function to update dialogue entries
-  const updateDialogueEntries = (question: string, message: string) => {
+  const updateDialogueEntries = (
+    question: string,
+    message: string,
+    source?: 'local' | 'remote',
+    model?: string,
+  ) => {
     setCurrentQuestion(undefined);
     setDialogueEntries([
       ...dialogueEntries,
-      { question: question, answer: message, answered: true },
+      {
+        question: question,
+        answer: message,
+        answered: true,
+        source: source || currentSource,
+        model: model || selectedModel,
+      } as EnhancedAIMessage,
     ]);
+  };
+
+  // Handle inference mode toggle
+  const handleInferenceModeToggle = async () => {
+    const newMode: InferenceMode = inferenceMode === 'local' ? 'remote' : 'local';
+
+    try {
+      await window.backendBridge.inference.setMode(newMode);
+      setInferenceMode(newMode);
+      setCurrentSource(newMode);
+    } catch (error) {
+      console.error('Failed to update inference mode:', error);
+      alert('Failed to update inference mode. Please try again.');
+    }
   };
 
   const checkGasCost = (balance: string, transaction: ActionParams): boolean => {
@@ -112,12 +157,14 @@ const ChatView = (): React.JSX.Element => {
     question: string,
     response: string,
     action: ActionParams | undefined,
+    source?: 'local' | 'remote',
+    model?: string,
   ) => {
     if (action == undefined) {
       action = {};
     }
     if (!isActionInitiated(action)) {
-      updateDialogueEntries(question, response); //no additional logic in this case
+      updateDialogueEntries(question, response, source, model); //no additional logic in this case
 
       return;
     }
@@ -125,7 +172,7 @@ const ChatView = (): React.JSX.Element => {
     // Sanity Checks:
     if (!account || !provider) {
       const errorMessage = `Error: Please connect to metamask`;
-      updateDialogueEntries(question, errorMessage);
+      updateDialogueEntries(question, errorMessage, source, model);
 
       return;
     }
@@ -138,7 +185,7 @@ const ChatView = (): React.JSX.Element => {
         } catch (error) {
           message = `Error: Failed to retrieve a valid balance from Metamask, try reconnecting.`;
         }
-        updateDialogueEntries(question, message);
+        updateDialogueEntries(question, message, source, model);
         break;
       }
 
@@ -153,61 +200,78 @@ const ChatView = (): React.JSX.Element => {
             updateDialogueEntries(
               question,
               `Important: The gas cost is expensive relative to your balance please proceed with caution\n\n${response}`,
+              source,
+              model,
             );
           } else {
-            updateDialogueEntries(question, response);
+            updateDialogueEntries(question, response, source, model);
           }
           await provider?.request(builtTx);
         } catch (error) {
           const badTransactionMessage =
             'Error: There was an error sending your transaction, if the transaction type is balance or transfer please reconnect to metamask';
-          updateDialogueEntries(question, badTransactionMessage);
+          updateDialogueEntries(question, badTransactionMessage, source, model);
         }
         break;
       }
 
       case 'address':
-        updateDialogueEntries(question, account);
+        updateDialogueEntries(question, account, source, model);
         break;
 
       default: {
         // If the transaction type is not recognized, we will not proceed with the transaction.
         const errorMessage = `Error: Invalid transaction type: ${action.type}`;
-        updateDialogueEntries(question, errorMessage);
+        updateDialogueEntries(question, errorMessage, source, model);
         break;
       }
     }
   };
 
-  const handleQuestionAsked = async (question: string) => {
+  const handleQuestionAsked = async (question: string, forceSource?: 'local' | 'remote') => {
     if (!question.trim()) return;
 
     setError(null);
     setIsLoading(true);
     setIsOllamaBeingPolled(true);
-    setCurrentQuestion({ question, answer: '', answered: false });
+
+    const useSource = forceSource || currentSource;
+    setCurrentQuestion({
+      question,
+      answer: '',
+      answered: false,
+      source: useSource,
+    });
 
     try {
-      const inference = await window.backendBridge.ollama.question({
-        model: selectedModel,
-        query: question,
-      });
+      // Use the new unified AI API
+      const result: InferenceResult = await window.backendBridge.ai.ask(
+        question,
+        selectedModel,
+        forceSource,
+      );
 
-      if (inference) {
-        const { response, action } = parseResponse(inference.message.content);
+      if (result) {
+        const { response, action } = parseResponse(result.response);
 
         if (response === 'error') {
           setError('Sorry, I had a problem with your request.');
-          updateDialogueEntries(question, 'Sorry, I had a problem with your request.');
+          updateDialogueEntries(
+            question,
+            'Sorry, I had a problem with your request.',
+            result.source,
+            result.model,
+          );
         } else {
-          await processResponse(question, response, action);
+          await processResponse(question, response, action, result.source, result.model);
         }
       }
     } catch (err) {
-      setError('Failed to send message. Please try again.');
+      setError(`Failed to send message via ${useSource} inference. Please try again.`);
       setIsLoading(false);
       setIsOllamaBeingPolled(false);
       setCurrentQuestion(undefined);
+      console.error('Inference failed:', err);
     }
   };
 
@@ -233,16 +297,28 @@ const ChatView = (): React.JSX.Element => {
         )}
 
         {dialogueEntries.map((entry, index) => {
+          const enhancedEntry = entry as EnhancedAIMessage;
           return (
             <Chat.MessageWrapper key={`dialogue-${index}`}>
-              {entry.question && (
+              {enhancedEntry.question && (
                 <Chat.UserMessage>
-                  <Chat.MessageContent isUser={true}>{entry.question}</Chat.MessageContent>
+                  <Chat.MessageContent isUser={true}>{enhancedEntry.question}</Chat.MessageContent>
                 </Chat.UserMessage>
               )}
-              {entry.answer && (
+              {enhancedEntry.answer && (
                 <Chat.AIMessage>
-                  <Chat.MessageContent isUser={false}>{entry.answer}</Chat.MessageContent>
+                  <Chat.AIHeader>
+                    <Chat.SourceIndicator $source={enhancedEntry.source || 'local'}>
+                      <Chat.SourceIcon>
+                        {enhancedEntry.source === 'remote' ? '☁️' : '🏠'}
+                      </Chat.SourceIcon>
+                      <Chat.SourceText>
+                        {enhancedEntry.source === 'remote' ? 'Remote' : 'Local'}
+                        {enhancedEntry.model && ` • ${enhancedEntry.model}`}
+                      </Chat.SourceText>
+                    </Chat.SourceIndicator>
+                  </Chat.AIHeader>
+                  <Chat.MessageContent isUser={false}>{enhancedEntry.answer}</Chat.MessageContent>
                 </Chat.AIMessage>
               )}
             </Chat.MessageWrapper>
@@ -255,9 +331,22 @@ const ChatView = (): React.JSX.Element => {
               <Chat.MessageContent isUser={true}>{currentQuestion.question}</Chat.MessageContent>
             </Chat.UserMessage>
             <Chat.AIMessage>
+              <Chat.AIHeader>
+                <Chat.SourceIndicator $source={currentQuestion.source || 'local'}>
+                  <Chat.SourceIcon>
+                    {currentQuestion.source === 'remote' ? '☁️' : '🏠'}
+                  </Chat.SourceIcon>
+                  <Chat.SourceText>
+                    {currentQuestion.source === 'remote' ? 'Remote' : 'Local'}
+                  </Chat.SourceText>
+                </Chat.SourceIndicator>
+              </Chat.AIHeader>
               <Chat.ThinkingIndicator>
                 <Chat.PollingIndicator width="20" height="20" />
-                <Chat.ThinkingText>Morpheus is thinking...</Chat.ThinkingText>
+                <Chat.ThinkingText>
+                  Morpheus is thinking via {currentQuestion.source === 'remote' ? 'cloud' : 'local'}{' '}
+                  inference...
+                </Chat.ThinkingText>
               </Chat.ThinkingIndicator>
             </Chat.AIMessage>
           </Chat.MessageWrapper>
@@ -273,13 +362,31 @@ const ChatView = (): React.JSX.Element => {
       </Chat.Main>
 
       <Chat.InputContainer>
+        <Chat.InferenceToggleWrapper>
+          <InferenceModeButton
+            currentMode={inferenceMode}
+            onToggle={handleInferenceModeToggle}
+            disabled={isOllamaBeingPolled}
+            compact={true}
+          />
+          <Chat.CurrentModeIndicator $mode={inferenceMode}>
+            <Chat.ModeText>
+              {inferenceMode === 'local' ? '🏠 Private & Local' : '☁️ Cloud Processing'}
+            </Chat.ModeText>
+          </Chat.CurrentModeIndicator>
+        </Chat.InferenceToggleWrapper>
+
         <Chat.InputWrapper>
           <Chat.Input
             ref={chatInputRef}
             disabled={isOllamaBeingPolled}
             value={inputValue}
             onChange={handleQuestionChange}
-            placeholder={isOllamaBeingPolled ? 'Morpheus is thinking...' : 'Message Morpheus...'}
+            placeholder={
+              isOllamaBeingPolled
+                ? `Morpheus is thinking (${currentSource})...`
+                : `Message Morpheus (${inferenceMode})...`
+            }
             onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -518,6 +625,70 @@ const Chat = {
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: 1.2rem;
     font-weight: bold;
+  `,
+
+  // New inference-related styles
+  InferenceToggleWrapper: Styled.div`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    padding: 10px 15px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 15px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  `,
+
+  CurrentModeIndicator: Styled.div<{ $mode: InferenceMode }>`
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    background: ${({ $mode }) =>
+      $mode === 'remote'
+        ? 'linear-gradient(135deg, #4A90E2, #5BA2F0)'
+        : 'linear-gradient(135deg, #179C65, #20B574)'};
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  `,
+
+  ModeText: Styled.span`
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+  `,
+
+  AIHeader: Styled.div`
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin-bottom: 8px;
+  `,
+
+  SourceIndicator: Styled.div<{ $source: 'local' | 'remote' }>`
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: ${({ $source }) =>
+      $source === 'remote' ? 'rgba(74, 144, 226, 0.15)' : 'rgba(23, 156, 101, 0.15)'};
+    border: 1px solid ${({ $source }) =>
+      $source === 'remote' ? 'rgba(74, 144, 226, 0.3)' : 'rgba(23, 156, 101, 0.3)'};
+  `,
+
+  SourceIcon: Styled.span`
+    font-size: 12px;
+    line-height: 1;
+  `,
+
+  SourceText: Styled.span`
+    font-size: 11px;
+    font-weight: 500;
+    color: ${(props) => props.theme.colors.notice};
+    opacity: 0.8;
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
   `,
 };
 

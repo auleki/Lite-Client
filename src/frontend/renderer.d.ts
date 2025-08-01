@@ -1,5 +1,27 @@
 import { ChatResponse, GenerateResponse, ListResponse, ModelResponse } from 'ollama';
 
+export type InferenceMode = 'local' | 'remote';
+
+export interface MorpheusAPIConfig {
+  apiKey: string;
+  baseUrl?: string;
+  defaultModel?: string;
+}
+
+export interface InferenceResult {
+  response: string;
+  source: 'local' | 'remote';
+  model: string;
+}
+
+export interface InferenceModel {
+  id: string;
+  name: string;
+  source: 'local' | 'remote';
+  size?: string;
+  description?: string;
+}
+
 export interface DiskSpaceInfo {
   free: number;
   freeGB: string;
@@ -45,6 +67,25 @@ export interface BackendBridge {
     getCurrentModel: () => Promise<any>;
     deleteModel: (modelName: string) => Promise<boolean>;
     pullAndReplaceModel: (modelName: string) => Promise<boolean>;
+  };
+  inference: {
+    getMode: () => Promise<InferenceMode>;
+    setMode: (mode: InferenceMode) => Promise<boolean>;
+    getMorpheusConfig: () => Promise<MorpheusAPIConfig | null>;
+    setMorpheusConfig: (config: MorpheusAPIConfig) => Promise<boolean>;
+    testMorpheusConnection: () => Promise<boolean>;
+  };
+  morpheus: {
+    getModels: () => Promise<any[]>;
+    question: (query: string, model?: string) => Promise<string>;
+  };
+  ai: {
+    ask: (
+      query: string,
+      model?: string,
+      forceSource?: 'local' | 'remote',
+    ) => Promise<InferenceResult>;
+    getModels: () => Promise<InferenceModel[]>;
   };
   removeAllListeners: (channel: string) => void;
 }

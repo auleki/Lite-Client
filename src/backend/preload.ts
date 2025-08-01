@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { ChatResponse, GenerateResponse, ListResponse, ModelResponse } from 'ollama';
-import { IpcChannel, OllamaChannel } from '../events';
-import { OllamaQuestion } from './types';
+import { IpcChannel, OllamaChannel, InferenceChannel, MorpheusChannel } from '../events';
+import { OllamaQuestion, InferenceMode, MorpheusAPIConfig } from './types';
 
 contextBridge.exposeInMainWorld('backendBridge', {
   main: {
@@ -41,6 +41,31 @@ contextBridge.exposeInMainWorld('backendBridge', {
       ipcRenderer.invoke(OllamaChannel.OllamaDeleteModel, modelName),
     pullAndReplaceModel: (modelName: string) =>
       ipcRenderer.invoke(OllamaChannel.OllamaPullAndReplaceModel, modelName),
+  },
+  inference: {
+    getMode: () => ipcRenderer.invoke(InferenceChannel.GetInferenceMode) as Promise<InferenceMode>,
+    setMode: (mode: InferenceMode) =>
+      ipcRenderer.invoke(InferenceChannel.SetInferenceMode, mode) as Promise<boolean>,
+    getMorpheusConfig: () =>
+      ipcRenderer.invoke(InferenceChannel.GetMorpheusConfig) as Promise<MorpheusAPIConfig | null>,
+    setMorpheusConfig: (config: MorpheusAPIConfig) =>
+      ipcRenderer.invoke(InferenceChannel.SetMorpheusConfig, config) as Promise<boolean>,
+    testMorpheusConnection: () =>
+      ipcRenderer.invoke(InferenceChannel.TestMorpheusConnection) as Promise<boolean>,
+  },
+  morpheus: {
+    getModels: () => ipcRenderer.invoke(MorpheusChannel.MorpheusGetModels) as Promise<any[]>,
+    question: (query: string, model?: string) =>
+      ipcRenderer.invoke(MorpheusChannel.MorpheusQuestion, query, model) as Promise<string>,
+  },
+  ai: {
+    ask: (query: string, model?: string, forceSource?: 'local' | 'remote') =>
+      ipcRenderer.invoke('ai:ask', query, model, forceSource) as Promise<{
+        response: string;
+        source: 'local' | 'remote';
+        model: string;
+      }>,
+    getModels: () => ipcRenderer.invoke('ai:getmodels') as Promise<any[]>,
   },
   removeAllListeners(channel: string) {
     ipcRenderer.removeAllListeners(channel);

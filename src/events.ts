@@ -24,6 +24,21 @@ export enum OllamaChannel {
   OllamaPullAndReplaceModel = 'ollama:pull-and-replace-model',
 }
 
+export enum InferenceChannel {
+  SetInferenceMode = 'inference:setmode',
+  GetInferenceMode = 'inference:getmode',
+  SetMorpheusConfig = 'inference:setmorpheusconfig',
+  GetMorpheusConfig = 'inference:getmorpheusconfig',
+  TestMorpheusConnection = 'inference:testmorpheusconnection',
+}
+
+export enum MorpheusChannel {
+  MorpheusGetModels = 'morpheus:getmodels',
+  MorpheusQuestion = 'morpheus:question',
+  MorpheusAnswer = 'morpheus:answer',
+  MorpheusInit = 'morpheus:init',
+}
+
 export enum IpcMainChannel {
   Error = 'main:error',
   CommandOuput = 'command:output',
