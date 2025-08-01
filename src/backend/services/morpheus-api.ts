@@ -172,7 +172,7 @@ class MorpheusAPIService {
   /**
    * Simple question/answer interface for compatibility with existing Ollama interface
    */
-  async ask(query: string, model: string = 'gpt-3.5-turbo'): Promise<string> {
+  async ask(query: string, model: string = 'llama-3.3-70b'): Promise<string> {
     const request: MorpheusChatRequest = {
       model,
       messages: [

@@ -212,7 +212,7 @@ class InferenceManager {
 
     try {
       // Use provided model or default
-      const targetModel = model || this.morpheusConfig?.defaultModel || 'gpt-3.5-turbo';
+      const targetModel = model || this.morpheusConfig?.defaultModel || 'llama-3.3-70b';
 
       const response = await api.ask(query, targetModel);
 

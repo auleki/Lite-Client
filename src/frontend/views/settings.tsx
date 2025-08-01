@@ -14,7 +14,7 @@ const SettingsView = (): React.JSX.Element => {
   const [morpheusConfig, setMorpheusConfig] = useState<MorpheusAPIConfig>({
     apiKey: '',
     baseUrl: 'https://api.mor.org/api/v1',
-    defaultModel: 'gpt-3.5-turbo',
+    defaultModel: 'llama-3.3-70b',
   });
   const [isConnectionTesting, setIsConnectionTesting] = useState<boolean>(false);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'success' | 'failed'>(
@@ -201,7 +201,7 @@ const SettingsView = (): React.JSX.Element => {
             type="text"
             value={morpheusConfig.defaultModel || ''}
             onChange={(e) => setMorpheusConfig({ ...morpheusConfig, defaultModel: e.target.value })}
-            placeholder="gpt-3.5-turbo"
+            placeholder="llama-3.3-70b"
           />
         </Settings.SettingRow>
 
