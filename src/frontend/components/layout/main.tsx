@@ -25,28 +25,58 @@ export default () => {
         if (currentModel?.name) {
           setCurrentModel(currentModel.name);
         } else {
-          // If no current model, check for orca-mini:3b
+          // If no current model, check for last used model first
+          let preferredModel = 'orca-mini:latest';
+          try {
+            const lastUsedModel = await window.backendBridge.ollama.getLastUsedLocalModel();
+            if (lastUsedModel) {
+              preferredModel = lastUsedModel;
+            }
+          } catch (error) {
+            console.warn('Could not get last used model, using default:', error);
+          }
+
           const allModels = await window.backendBridge.ollama.getAllModels();
           console.log('All available models:', allModels);
 
           if (allModels?.models && allModels.models.length > 0) {
-            const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:3b');
+            const preferredModelObj = allModels.models.find((m) => m.name === preferredModel);
 
-            if (orcaMini) {
-              // orca-mini:3b is available, use it as default
-              setCurrentModel('orca-mini:3b (default)');
+            if (preferredModelObj) {
+              // Preferred model is available, use it
+              setCurrentModel(`${preferredModel} (preferred)`);
+            } else if (preferredModel !== 'orca-mini:latest') {
+              // Preferred model not available, try orca-mini:latest
+              const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:latest');
+              if (orcaMini) {
+                setCurrentModel('orca-mini:latest (default)');
+              } else {
+                // Neither preferred nor orca-mini available, download orca-mini
+                console.log('orca-mini:latest not found, downloading...');
+                setCurrentModel('Downloading orca-mini:latest...');
+
+                try {
+                  await window.backendBridge.ollama.getModel('orca-mini:latest');
+                  setCurrentModel('orca-mini:latest (default)');
+                  console.log('orca-mini:latest downloaded successfully');
+                } catch (downloadError) {
+                  console.error('Failed to download orca-mini:latest:', downloadError);
+                  // Fallback to first available model
+                  const fallbackModel = allModels.models[0];
+                  setCurrentModel(`${fallbackModel.name} (fallback)`);
+                }
+              }
             } else {
-              // orca-mini:3b not available, notify user and download it
-              console.log('orca-mini:3b not found, downloading...');
-              setCurrentModel('Downloading orca-mini:3b...');
+              // orca-mini:latest not available, download it
+              console.log('orca-mini:latest not found, downloading...');
+              setCurrentModel('Downloading orca-mini:latest...');
 
               try {
-                // Download orca-mini:3b
-                await window.backendBridge.ollama.getModel('orca-mini:3b');
-                setCurrentModel('orca-mini:3b (default)');
-                console.log('orca-mini:3b downloaded successfully');
+                await window.backendBridge.ollama.getModel('orca-mini:latest');
+                setCurrentModel('orca-mini:latest (default)');
+                console.log('orca-mini:latest downloaded successfully');
               } catch (downloadError) {
-                console.error('Failed to download orca-mini:3b:', downloadError);
+                console.error('Failed to download orca-mini:latest:', downloadError);
                 // Fallback to first available model
                 const fallbackModel = allModels.models[0];
                 setCurrentModel(`${fallbackModel.name} (fallback)`);

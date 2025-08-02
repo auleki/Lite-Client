@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ChangeEvent } from 'react';
 import Styled from 'styled-components';
 
 // Types
@@ -180,7 +180,9 @@ const SettingsView = (): React.JSX.Element => {
           <Settings.InputField
             type="text"
             value={morpheusConfig.baseUrl || ''}
-            onChange={(e) => setMorpheusConfig({ ...morpheusConfig, baseUrl: e.target.value })}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setMorpheusConfig({ ...morpheusConfig, baseUrl: e.target.value })
+            }
             placeholder="https://api.mor.org/api/v1"
           />
         </Settings.SettingRow>
@@ -190,7 +192,9 @@ const SettingsView = (): React.JSX.Element => {
           <Settings.InputField
             type="password"
             value={morpheusConfig.apiKey}
-            onChange={(e) => setMorpheusConfig({ ...morpheusConfig, apiKey: e.target.value })}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setMorpheusConfig({ ...morpheusConfig, apiKey: e.target.value })
+            }
             placeholder="Enter your Morpheus API key"
           />
         </Settings.SettingRow>
@@ -200,7 +204,9 @@ const SettingsView = (): React.JSX.Element => {
           <Settings.InputField
             type="text"
             value={morpheusConfig.defaultModel || ''}
-            onChange={(e) => setMorpheusConfig({ ...morpheusConfig, defaultModel: e.target.value })}
+            onChange={(e: ChangeEvent<HTMLInputElement>) =>
+              setMorpheusConfig({ ...morpheusConfig, defaultModel: e.target.value })
+            }
             placeholder="llama-3.3-70b"
           />
         </Settings.SettingRow>

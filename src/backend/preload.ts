@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('backendBridge', {
       ipcRenderer.invoke(OllamaChannel.OllamaCheckDiskSpaceForModel, modelSize),
     getDiskSpaceInfo: () => ipcRenderer.invoke(OllamaChannel.OllamaGetDiskSpaceInfo),
     getCurrentModel: () => ipcRenderer.invoke(OllamaChannel.OllamaGetCurrentModel),
+    saveLastUsedLocalModel: (model: string) =>
+      ipcRenderer.invoke(OllamaChannel.OllamaSaveLastUsedLocalModel, model),
+    getLastUsedLocalModel: () => ipcRenderer.invoke(OllamaChannel.OllamaGetLastUsedLocalModel),
     deleteModel: (modelName: string) =>
       ipcRenderer.invoke(OllamaChannel.OllamaDeleteModel, modelName),
     pullAndReplaceModel: (modelName: string) =>

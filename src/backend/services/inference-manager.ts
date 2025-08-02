@@ -9,7 +9,11 @@ import {
 import { askOllama, getAllLocalModels, getCurrentModel } from './ollama';
 
 // Storage
-import { getInferenceConfigFromStorage, saveInferenceConfigToStorage } from '../storage';
+import {
+  getInferenceConfigFromStorage,
+  saveInferenceConfigToStorage,
+  getLastUsedLocalModelFromStorage,
+} from '../storage';
 
 export interface InferenceModel {
   id: string;
@@ -132,14 +136,15 @@ class InferenceManager {
 
     // Always include local models
     try {
-      const localModels = await getAllLocalModels();
-      const localModelList = localModels.map((model) => ({
-        id: model.model || model.name,
-        name: model.model || model.name,
-        source: 'local' as const,
-        size: model.size,
-        description: 'Local Ollama model',
-      }));
+      const localModelsResponse = await getAllLocalModels();
+      const localModelList =
+        localModelsResponse.models?.map((model: any) => ({
+          id: model.name,
+          name: model.name,
+          source: 'local' as const,
+          size: model.size,
+          description: 'Local Ollama model',
+        })) || [];
       models.push(...localModelList);
     } catch (error) {
       logger.error('Failed to fetch local models:', error);
@@ -181,17 +186,59 @@ class InferenceManager {
    */
   private async askLocal(query: string, model?: string): Promise<InferenceResult> {
     try {
-      // Use provided model or get current model
+      // Use provided model or get stored preferred model or get current model or get first available model
       let targetModel = model;
+
       if (!targetModel) {
-        const currentModel = await getCurrentModel();
-        targetModel = currentModel?.name || 'llama2';
+        // Check for stored last used local model
+        targetModel = getLastUsedLocalModelFromStorage();
+
+        // Verify the stored model actually exists
+        if (targetModel && targetModel !== 'orca-mini:latest') {
+          try {
+            const localModelsResponse = await getAllLocalModels();
+            const modelExists = localModelsResponse.models?.some((m) => m.name === targetModel);
+            if (!modelExists) {
+              logger.info(`Stored model ${targetModel} not found, falling back`);
+              targetModel = undefined;
+            }
+          } catch (error) {
+            logger.warn('Could not verify stored model exists:', error);
+            targetModel = undefined;
+          }
+        }
       }
 
-      const response = await askOllama(query, targetModel);
+      if (!targetModel) {
+        const currentModel = await getCurrentModel();
+        targetModel = currentModel?.name;
+      }
+
+      // If still no model, get the first available local model
+      if (!targetModel) {
+        const localModelsResponse = await getAllLocalModels();
+        const firstModel = localModelsResponse.models?.[0];
+        targetModel = firstModel?.name;
+      }
+
+      // Final fallback - use orca-mini as default
+      if (!targetModel) {
+        targetModel = 'orca-mini:latest';
+        logger.info('No models found, using default: orca-mini:latest');
+      }
+
+      // Double-check we have a valid model
+      if (!targetModel || targetModel.trim() === '') {
+        throw new Error(
+          'No valid model available for local inference. Please ensure Ollama models are installed.',
+        );
+      }
+
+      logger.info(`Using local model: ${targetModel}`);
+      const chatResponse = await askOllama(targetModel, query);
 
       return {
-        response,
+        response: chatResponse.message.content,
         source: 'local',
         model: targetModel,
       };

@@ -28,7 +28,7 @@ interface EnhancedAIMessage extends AIMessage {
 }
 
 const ChatView = (): React.JSX.Element => {
-  const [selectedModel, setSelectedModel] = useState<string>('llama2');
+  const [selectedModel, setSelectedModel] = useState<string>('orca-mini:latest');
   const [dialogueEntries, setDialogueEntries] = useAIMessagesContext();
   const [inputValue, setInputValue] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState<EnhancedAIMessage>();
@@ -48,16 +48,25 @@ const ChatView = (): React.JSX.Element => {
   useEffect(() => {
     const loadInitialSettings = async () => {
       try {
-        // Load current model
-        const model = await window.backendBridge.ollama.getCurrentModel();
-        if (model?.name) {
-          setSelectedModel(model.name);
-        }
-
-        // Load inference mode
+        // Load inference mode first
         const mode = await window.backendBridge.inference.getMode();
         setInferenceMode(mode);
         setCurrentSource(mode);
+
+        // Load preferred model based on mode
+        if (mode === 'local') {
+          // For local mode, try stored last used model first
+          const lastUsedModel = await window.backendBridge.ollama.getLastUsedLocalModel();
+          if (lastUsedModel) {
+            setSelectedModel(lastUsedModel);
+          } else {
+            // Fallback to current model
+            const model = await window.backendBridge.ollama.getCurrentModel();
+            if (model?.name) {
+              setSelectedModel(model.name);
+            }
+          }
+        }
       } catch (error) {
         console.error('Failed to load initial settings:', error);
       }
@@ -117,6 +126,8 @@ const ChatView = (): React.JSX.Element => {
     model?: string,
   ) => {
     setCurrentQuestion(undefined);
+    setIsLoading(false);
+    setIsOllamaBeingPolled(false);
     setDialogueEntries([
       ...dialogueEntries,
       {
@@ -130,6 +141,25 @@ const ChatView = (): React.JSX.Element => {
   };
 
   // Handle inference mode toggle
+  // Save model preference when changed in local mode
+  const saveLocalModelPreference = async (model: string) => {
+    if (inferenceMode === 'local' && model && model !== 'orca-mini:latest') {
+      try {
+        await window.backendBridge.ollama.saveLastUsedLocalModel(model);
+        console.log(`Saved local model preference: ${model}`);
+      } catch (error) {
+        console.warn('Failed to save model preference:', error);
+      }
+    }
+  };
+
+  // Watch for selectedModel changes and save preference
+  useEffect(() => {
+    if (selectedModel && inferenceMode === 'local') {
+      saveLocalModelPreference(selectedModel);
+    }
+  }, [selectedModel, inferenceMode]);
+
   const handleInferenceModeToggle = async () => {
     const newMode: InferenceMode = inferenceMode === 'local' ? 'remote' : 'local';
 
@@ -137,9 +167,33 @@ const ChatView = (): React.JSX.Element => {
       await window.backendBridge.inference.setMode(newMode);
       setInferenceMode(newMode);
       setCurrentSource(newMode);
+
+      // If switching to local mode, load the preferred model
+      if (newMode === 'local') {
+        try {
+          const lastUsedModel = await window.backendBridge.ollama.getLastUsedLocalModel();
+          if (lastUsedModel) {
+            setSelectedModel(lastUsedModel);
+          } else {
+            const model = await window.backendBridge.ollama.getCurrentModel();
+            if (model?.name) {
+              setSelectedModel(model.name);
+            } else {
+              // Try to get any available local model
+              const allModels = await window.backendBridge.ai.getModels();
+              const localModel = allModels.find((m) => m.source === 'local');
+              if (localModel) {
+                setSelectedModel(localModel.id);
+              }
+            }
+          }
+        } catch (modelError) {
+          console.warn('Could not update model selection:', modelError);
+        }
+      }
     } catch (error) {
       console.error('Failed to update inference mode:', error);
-      alert('Failed to update inference mode. Please try again.');
+      setError('Failed to update inference mode. Please ensure Ollama is running for local mode.');
     }
   };
 
@@ -252,18 +306,25 @@ const ChatView = (): React.JSX.Element => {
       );
 
       if (result) {
-        const { response, action } = parseResponse(result.response);
-
-        if (response === 'error') {
-          setError('Sorry, I had a problem with your request.');
-          updateDialogueEntries(
-            question,
-            'Sorry, I had a problem with your request.',
-            result.source,
-            result.model,
-          );
+        // Handle remote responses (plain text) vs local responses (JSON format)
+        if (result.source === 'remote') {
+          // Remote responses are plain text, no need to parse
+          await processResponse(question, result.response, {}, result.source, result.model);
         } else {
-          await processResponse(question, response, action, result.source, result.model);
+          // Local responses are JSON with response/action structure
+          const { response, action } = parseResponse(result.response);
+
+          if (response === 'error') {
+            setError('Sorry, I had a problem with your request.');
+            updateDialogueEntries(
+              question,
+              'Sorry, I had a problem with your request.',
+              result.source,
+              result.model,
+            );
+          } else {
+            await processResponse(question, response, action, result.source, result.model);
+          }
         }
       }
     } catch (err) {
@@ -302,7 +363,7 @@ const ChatView = (): React.JSX.Element => {
             <Chat.MessageWrapper key={`dialogue-${index}`}>
               {enhancedEntry.question && (
                 <Chat.UserMessage>
-                  <Chat.MessageContent isUser={true}>{enhancedEntry.question}</Chat.MessageContent>
+                  <Chat.MessageContent $isUser={true}>{enhancedEntry.question}</Chat.MessageContent>
                 </Chat.UserMessage>
               )}
               {enhancedEntry.answer && (
@@ -318,7 +379,7 @@ const ChatView = (): React.JSX.Element => {
                       </Chat.SourceText>
                     </Chat.SourceIndicator>
                   </Chat.AIHeader>
-                  <Chat.MessageContent isUser={false}>{enhancedEntry.answer}</Chat.MessageContent>
+                  <Chat.MessageContent $isUser={false}>{enhancedEntry.answer}</Chat.MessageContent>
                 </Chat.AIMessage>
               )}
             </Chat.MessageWrapper>
@@ -328,7 +389,7 @@ const ChatView = (): React.JSX.Element => {
         {currentQuestion && (
           <Chat.MessageWrapper>
             <Chat.UserMessage>
-              <Chat.MessageContent isUser={true}>{currentQuestion.question}</Chat.MessageContent>
+              <Chat.MessageContent $isUser={true}>{currentQuestion.question}</Chat.MessageContent>
             </Chat.UserMessage>
             <Chat.AIMessage>
               <Chat.AIHeader>
@@ -398,15 +459,13 @@ const ChatView = (): React.JSX.Element => {
             disabled={isOllamaBeingPolled || !inputValue.trim()}
             onClick={() => handleQuestionAsked(inputValue)}
           >
-            <Chat.SendIcon>→</Chat.SendIcon>
+            {isLoading ? (
+              <Chat.LoadingSpinner $isRemote={inferenceMode === 'remote'} />
+            ) : (
+              <Chat.SendIcon>→</Chat.SendIcon>
+            )}
           </Chat.SendButton>
         </Chat.InputWrapper>
-
-        {isLoading && (
-          <Chat.LoadingIndicator>
-            <Chat.LoadingText>Processing your request...</Chat.LoadingText>
-          </Chat.LoadingIndicator>
-        )}
       </Chat.InputContainer>
     </Chat.Layout>
   );
@@ -480,7 +539,7 @@ const Chat = {
     justify-content: flex-start;
     margin-bottom: 10px;
   `,
-  MessageContent: Styled.div<{ isUser?: boolean }>`
+  MessageContent: Styled.div<{ $isUser?: boolean }>`
     display: inline-block;
     padding: 12px 16px;
     border-radius: 18px;
@@ -489,8 +548,8 @@ const Chat = {
     word-wrap: break-word;
     max-width: 70%;
     line-height: 1.4;
-    background: ${(props) => (props.isUser ? props.theme.colors.emerald : props.theme.colors.hunter)};
-    color: ${(props) => (props.isUser ? props.theme.colors.core : props.theme.colors.notice)};
+    background: ${(props) => (props.$isUser ? props.theme.colors.emerald : props.theme.colors.hunter)};
+    color: ${(props) => (props.$isUser ? props.theme.colors.core : props.theme.colors.notice)};
   `,
   ThinkingIndicator: Styled.div`
     display: flex;
@@ -545,21 +604,18 @@ const Chat = {
       background: ${(props) => props.theme.colors.hunter};
     }
   `,
-  LoadingIndicator: Styled.div`
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: ${(props) => props.theme.colors.hunter};
-    border-radius: 15px;
-    margin: 20px auto;
-    max-width: 80%;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-  `,
-  LoadingText: Styled.span`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: ${(props) => props.theme.fonts.size.medium};
+  LoadingSpinner: Styled.div<{ $isRemote?: boolean }>`
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid ${(props) => (props.$isRemote ? '#4A90E2' : props.theme.colors.emerald)};
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   `,
   InputContainer: Styled.div`
     display: flex;

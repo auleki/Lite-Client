@@ -63,43 +63,74 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
       if (current?.name) {
         setCurrentModel(current);
       } else {
-        // If no current model, check for orca-mini:3b as default
+        // If no current model, check for last used model first, then orca-mini:latest as default
+        let preferredModel = 'orca-mini:latest';
+        try {
+          const lastUsedModel = await window.backendBridge.ollama.getLastUsedLocalModel();
+          if (lastUsedModel) {
+            preferredModel = lastUsedModel;
+          }
+        } catch (error) {
+          console.warn('Could not get last used model, using default:', error);
+        }
+
         const allModels = await window.backendBridge.ollama.getAllModels();
         if (allModels?.models && allModels.models.length > 0) {
-          const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:3b');
-          if (orcaMini) {
-            // Convert ListResponse model to RegistryModel format
+          const preferredModelObj = allModels.models.find((m) => m.name === preferredModel);
+
+          if (preferredModelObj) {
+            // Use preferred model
             setCurrentModel({
-              name: orcaMini.name,
-              description: '', // ModelResponse doesn't have description
-              size: orcaMini.size || 0,
-              modifiedAt: orcaMini.modified_at
-                ? typeof orcaMini.modified_at === 'string'
-                  ? orcaMini.modified_at
-                  : orcaMini.modified_at.toISOString()
+              name: preferredModelObj.name,
+              description: '',
+              size: preferredModelObj.size || 0,
+              modifiedAt: preferredModelObj.modified_at
+                ? typeof preferredModelObj.modified_at === 'string'
+                  ? preferredModelObj.modified_at
+                  : preferredModelObj.modified_at.toISOString()
                 : '',
-              digest: orcaMini.digest || '',
-              tags: orcaMini.families || [],
+              digest: preferredModelObj.digest || '',
+              tags: preferredModelObj.families || [],
               isInstalled: true,
               isDefault: true,
             });
           } else {
-            // Use first available model as fallback
-            const firstModel = allModels.models[0];
-            setCurrentModel({
-              name: firstModel.name,
-              description: '', // ModelResponse doesn't have description
-              size: firstModel.size || 0,
-              modifiedAt: firstModel.modified_at
-                ? typeof firstModel.modified_at === 'string'
-                  ? firstModel.modified_at
-                  : firstModel.modified_at.toISOString()
-                : '',
-              digest: firstModel.digest || '',
-              tags: firstModel.families || [],
-              isInstalled: true,
-              isDefault: true,
-            });
+            // Fallback to orca-mini:latest
+            const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:latest');
+            if (orcaMini) {
+              // Convert ListResponse model to RegistryModel format
+              setCurrentModel({
+                name: orcaMini.name,
+                description: '', // ModelResponse doesn't have description
+                size: orcaMini.size || 0,
+                modifiedAt: orcaMini.modified_at
+                  ? typeof orcaMini.modified_at === 'string'
+                    ? orcaMini.modified_at
+                    : orcaMini.modified_at.toISOString()
+                  : '',
+                digest: orcaMini.digest || '',
+                tags: orcaMini.families || [],
+                isInstalled: true,
+                isDefault: true,
+              });
+            } else {
+              // Use first available model as fallback
+              const firstModel = allModels.models[0];
+              setCurrentModel({
+                name: firstModel.name,
+                description: '', // ModelResponse doesn't have description
+                size: firstModel.size || 0,
+                modifiedAt: firstModel.modified_at
+                  ? typeof firstModel.modified_at === 'string'
+                    ? firstModel.modified_at
+                    : firstModel.modified_at.toISOString()
+                  : '',
+                digest: firstModel.digest || '',
+                tags: firstModel.families || [],
+                isInstalled: true,
+                isDefault: true,
+              });
+            }
           }
         }
       }

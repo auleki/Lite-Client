@@ -65,6 +65,8 @@ export interface BackendBridge {
     checkDiskSpaceForModel: (modelSize: number) => Promise<DiskSpaceForModel>;
     getDiskSpaceInfo: () => Promise<DiskSpaceInfo>;
     getCurrentModel: () => Promise<any>;
+    saveLastUsedLocalModel: (model: string) => Promise<void>;
+    getLastUsedLocalModel: () => Promise<string>;
     deleteModel: (modelName: string) => Promise<boolean>;
     pullAndReplaceModel: (modelName: string) => Promise<boolean>;
   };

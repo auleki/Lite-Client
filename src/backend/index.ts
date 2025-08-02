@@ -22,6 +22,8 @@ import {
   checkDiskSpaceForModelHandler,
   getDiskSpaceInfoHandler,
   getCurrentModelHandler,
+  saveLastUsedLocalModelHandler,
+  getLastUsedLocalModelHandler,
   deleteModelHandler,
   pullAndReplaceModelHandler,
   // New inference management handlers
@@ -95,6 +97,8 @@ app.on('ready', async () => {
   ipcMain.handle(OllamaChannel.OllamaCheckDiskSpaceForModel, checkDiskSpaceForModelHandler);
   ipcMain.handle(OllamaChannel.OllamaGetDiskSpaceInfo, getDiskSpaceInfoHandler);
   ipcMain.handle(OllamaChannel.OllamaGetCurrentModel, getCurrentModelHandler);
+  ipcMain.handle(OllamaChannel.OllamaSaveLastUsedLocalModel, saveLastUsedLocalModelHandler);
+  ipcMain.handle(OllamaChannel.OllamaGetLastUsedLocalModel, getLastUsedLocalModelHandler);
   ipcMain.handle(OllamaChannel.OllamaDeleteModel, deleteModelHandler);
   ipcMain.handle(OllamaChannel.OllamaPullAndReplaceModel, pullAndReplaceModelHandler);
 

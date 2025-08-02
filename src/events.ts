@@ -20,6 +20,8 @@ export enum OllamaChannel {
   OllamaCheckDiskSpaceForModel = 'ollama:check-disk-space-for-model',
   OllamaGetDiskSpaceInfo = 'ollama:get-disk-space-info',
   OllamaGetCurrentModel = 'ollama:get-current-model',
+  OllamaSaveLastUsedLocalModel = 'ollama:save-last-used-local-model',
+  OllamaGetLastUsedLocalModel = 'ollama:get-last-used-local-model',
   OllamaDeleteModel = 'ollama:delete-model',
   OllamaPullAndReplaceModel = 'ollama:pull-and-replace-model',
 }

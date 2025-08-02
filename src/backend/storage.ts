@@ -4,6 +4,7 @@ import { InferenceConfig } from './types';
 export type SchemaType = {
   modelsPath: string;
   inferenceConfig: InferenceConfig;
+  lastUsedLocalModel?: string;
 };
 
 const store = new Store<SchemaType>({
@@ -12,6 +13,7 @@ const store = new Store<SchemaType>({
     inferenceConfig: {
       mode: 'local',
     },
+    lastUsedLocalModel: 'orca-mini:latest',
   },
 });
 
@@ -29,6 +31,14 @@ export const saveInferenceConfigToStorage = (config: InferenceConfig) => {
 
 export const getInferenceConfigFromStorage = (): InferenceConfig => {
   return store.get('inferenceConfig');
+};
+
+export const saveLastUsedLocalModelToStorage = (model: string) => {
+  store.set('lastUsedLocalModel', model);
+};
+
+export const getLastUsedLocalModelFromStorage = (): string => {
+  return store.get('lastUsedLocalModel') || 'orca-mini:latest';
 };
 
 export const clearStore = () => {

@@ -18,7 +18,12 @@ import {
 } from './services/ollama';
 import { getInferenceManager } from './services/inference-manager';
 import { OllamaQuestion, InferenceMode, MorpheusAPIConfig } from './types';
-import { saveModelPathToStorage, getModelPathFromStorage } from './storage';
+import {
+  saveModelPathToStorage,
+  getModelPathFromStorage,
+  saveLastUsedLocalModelToStorage,
+  getLastUsedLocalModelFromStorage,
+} from './storage';
 import { logger } from './services/logger';
 
 export const initOllama = async (_: Electron.IpcMainEvent) => {
@@ -153,6 +158,25 @@ export const getCurrentModelHandler = async () => {
     return await getCurrentModel();
   } catch (error) {
     logger.error('Error getting current model:', error);
+    throw error;
+  }
+};
+
+export const saveLastUsedLocalModelHandler = async (_: Electron.IpcMainEvent, model: string) => {
+  try {
+    saveLastUsedLocalModelToStorage(model);
+    logger.info(`Saved last used local model: ${model}`);
+  } catch (error) {
+    logger.error('Error saving last used local model:', error);
+    throw error;
+  }
+};
+
+export const getLastUsedLocalModelHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    return getLastUsedLocalModelFromStorage();
+  } catch (error) {
+    logger.error('Error getting last used local model:', error);
     throw error;
   }
 };
