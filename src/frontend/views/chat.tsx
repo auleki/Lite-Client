@@ -220,16 +220,15 @@ const ChatView = (): React.JSX.Element => {
       return;
     }
 
-    // Sanity Checks:
-    if (!account || !provider) {
-      const errorMessage = `Error: Please connect to metamask`;
-      updateDialogueEntries(question, errorMessage, source, model);
-
-      return;
-    }
-
     switch (action.type.toLowerCase()) {
       case 'balance': {
+        // MetaMask check only for blockchain actions
+        if (!account || !provider) {
+          const errorMessage = `Error: Please connect to metamask`;
+          updateDialogueEntries(question, errorMessage, source, model);
+          return;
+        }
+
         let message: string;
         try {
           message = await handleBalanceRequest(provider, account);
@@ -241,6 +240,13 @@ const ChatView = (): React.JSX.Element => {
       }
 
       case 'transfer': {
+        // MetaMask check only for blockchain actions
+        if (!account || !provider) {
+          const errorMessage = `Error: Please connect to metamask`;
+          updateDialogueEntries(question, errorMessage, source, model);
+          return;
+        }
+
         try {
           const builtTx = await handleTransactionRequest(provider, action, account, question);
           console.log('from: ' + builtTx.params[0].from);
@@ -267,13 +273,20 @@ const ChatView = (): React.JSX.Element => {
       }
 
       case 'address':
+        // MetaMask check only for blockchain actions
+        if (!account || !provider) {
+          const errorMessage = `Error: Please connect to metamask`;
+          updateDialogueEntries(question, errorMessage, source, model);
+          return;
+        }
+
         updateDialogueEntries(question, account, source, model);
         break;
 
       default: {
-        // If the transaction type is not recognized, we will not proceed with the transaction.
-        const errorMessage = `Error: Invalid transaction type: ${action.type}`;
-        updateDialogueEntries(question, errorMessage, source, model);
+        // For regular AI responses, just pass through the response
+        // No MetaMask needed for normal chat
+        updateDialogueEntries(question, response, source, model);
         break;
       }
     }
@@ -309,7 +322,10 @@ const ChatView = (): React.JSX.Element => {
           await processResponse(question, result.response, {}, result.source, result.model);
         } else {
           // Local responses are JSON with response/action structure
+          console.log('[Frontend] Raw local response:', result.response);
           const { response, action } = parseResponse(result.response);
+          console.log('[Frontend] Parsed response:', response);
+          console.log('[Frontend] Parsed action:', JSON.stringify(action, null, 2));
 
           if (response === 'error') {
             setError('Sorry, I had a problem with your request.');

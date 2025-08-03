@@ -32,15 +32,20 @@ export interface InferenceResult {
 class InferenceManager {
   private currentMode: InferenceMode = 'local';
   private morpheusConfig: MorpheusAPIConfig | null = null;
+  private isInitialized: boolean = false;
 
   constructor() {
-    this.loadConfig();
+    // Initialization will happen when first accessed
   }
 
   /**
-   * Load configuration from storage
+   * Initialize the manager with configuration from storage
    */
-  private async loadConfig() {
+  async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
     try {
       const config = await getInferenceConfigFromStorage();
       if (config) {
@@ -50,10 +55,25 @@ class InferenceManager {
         // Initialize Morpheus API if config exists
         if (this.morpheusConfig && this.morpheusConfig.apiKey) {
           initializeMorpheusAPI(this.morpheusConfig);
+          logger.info('Morpheus API initialized with existing config');
         }
       }
+
+      this.isInitialized = true;
+      logger.info(`Inference manager initialized in ${this.currentMode} mode`);
     } catch (error) {
-      logger.error('Failed to load inference config:', error);
+      logger.error('Failed to initialize inference manager:', error);
+      // Set as initialized even if loading failed to prevent infinite retries
+      this.isInitialized = true;
+    }
+  }
+
+  /**
+   * Ensure the manager is initialized before use
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.isInitialized) {
+      await this.initialize();
     }
   }
 
@@ -74,7 +94,8 @@ class InferenceManager {
   /**
    * Get current inference mode
    */
-  getInferenceMode(): InferenceMode {
+  async getInferenceMode(): Promise<InferenceMode> {
+    await this.ensureInitialized();
     return this.currentMode;
   }
 
@@ -82,6 +103,7 @@ class InferenceManager {
    * Set inference mode
    */
   async setInferenceMode(mode: InferenceMode): Promise<void> {
+    await this.ensureInitialized();
     this.currentMode = mode;
     await this.saveConfig();
     logger.info(`Inference mode set to: ${mode}`);
@@ -90,7 +112,8 @@ class InferenceManager {
   /**
    * Get Morpheus API configuration
    */
-  getMorpheusConfig(): MorpheusAPIConfig | null {
+  async getMorpheusConfig(): Promise<MorpheusAPIConfig | null> {
+    await this.ensureInitialized();
     return this.morpheusConfig;
   }
 
@@ -98,6 +121,7 @@ class InferenceManager {
    * Set Morpheus API configuration
    */
   async setMorpheusConfig(config: MorpheusAPIConfig): Promise<void> {
+    await this.ensureInitialized();
     this.morpheusConfig = config;
 
     // Destroy existing instance and create new one
@@ -115,6 +139,7 @@ class InferenceManager {
    * Test Morpheus API connection
    */
   async testMorpheusConnection(): Promise<boolean> {
+    await this.ensureInitialized();
     const api = getMorpheusAPI();
     if (!api) {
       return false;
@@ -132,6 +157,7 @@ class InferenceManager {
    * Get available models from current source
    */
   async getAvailableModels(): Promise<InferenceModel[]> {
+    await this.ensureInitialized();
     const models: InferenceModel[] = [];
 
     // Always include local models
@@ -174,9 +200,15 @@ class InferenceManager {
    * Ask a question using the current inference mode
    */
   async ask(query: string, model?: string): Promise<InferenceResult> {
+    await this.ensureInitialized();
+    console.log(
+      `[InferenceManager] ask() called with mode: ${this.currentMode}, query: ${query.substring(0, 50)}...`,
+    );
     if (this.currentMode === 'remote') {
+      console.log('[InferenceManager] Using remote inference');
       return this.askRemote(query, model);
     } else {
+      console.log('[InferenceManager] Using local inference');
       return this.askLocal(query, model);
     }
   }
@@ -185,6 +217,7 @@ class InferenceManager {
    * Ask a question using local inference (Ollama)
    */
   private async askLocal(query: string, model?: string): Promise<InferenceResult> {
+    console.log('[InferenceManager] askLocal() called');
     try {
       // Use provided model or get stored preferred model or get current model or get first available model
       let targetModel = model;
@@ -235,7 +268,11 @@ class InferenceManager {
       }
 
       logger.info(`Using local model: ${targetModel}`);
+      console.log(`[InferenceManager] About to call askOllama with model: ${targetModel}`);
       const chatResponse = await askOllama(targetModel, query);
+      console.log('[InferenceManager] askOllama completed successfully');
+      console.log('[InferenceManager] Raw chat response:', JSON.stringify(chatResponse, null, 2));
+      console.log('[InferenceManager] Chat response content:', chatResponse.message.content);
 
       return {
         response: chatResponse.message.content,
@@ -243,26 +280,30 @@ class InferenceManager {
         model: targetModel,
       };
     } catch (error) {
+      console.error('[InferenceManager] Local inference failed:', error);
       logger.error('Local inference failed:', error);
       throw new Error('Local inference failed: ' + error.message);
     }
   }
 
   /**
-   * Ask a question using remote inference (Morpheus API)
+   * Ask a question using remote inference (Morpheus API) with automatic fallback
    */
   private async askRemote(query: string, model?: string): Promise<InferenceResult> {
     const api = getMorpheusAPI();
     if (!api) {
-      throw new Error('Morpheus API not configured. Please set up your API key in settings.');
+      logger.warn('Morpheus API not configured, falling back to local mode');
+      return this.askLocal(query, model);
     }
 
     try {
       // Use provided model or default
       const targetModel = model || this.morpheusConfig?.defaultModel || 'llama-3.3-70b';
 
+      logger.info(`Attempting remote inference with model: ${targetModel}`);
       const response = await api.ask(query, targetModel);
 
+      logger.info('Remote inference successful');
       return {
         response,
         source: 'remote',
@@ -270,8 +311,70 @@ class InferenceManager {
       };
     } catch (error) {
       logger.error('Remote inference failed:', error);
-      throw new Error('Remote inference failed: ' + error.message);
+
+      // Determine if we should fallback based on error type
+      const shouldFallback = this.shouldFallbackToLocal(error);
+
+      if (shouldFallback) {
+        logger.info('Falling back to local inference due to remote failure');
+        try {
+          const localResult = await this.askLocal(query, model);
+          // Add a note to the response indicating fallback
+          return {
+            ...localResult,
+            response:
+              localResult.response +
+              '\n\n*Note: Responded using local inference due to remote API unavailability.*',
+          };
+        } catch (localError) {
+          logger.error('Local fallback also failed:', localError);
+          throw new Error(
+            'Both remote and local inference failed. Please check your configuration.',
+          );
+        }
+      } else {
+        // For authentication/configuration errors, don't fallback
+        throw new Error(`Remote inference failed: ${error.message}`);
+      }
     }
+  }
+
+  /**
+   * Determine if we should fallback to local mode based on the error
+   */
+  private shouldFallbackToLocal(error: any): boolean {
+    if (!error) return true;
+
+    const errorMessage = error.message?.toLowerCase() || '';
+    const errorCode = error.response?.status;
+
+    // Don't fallback for authentication/authorization errors
+    if (
+      errorCode === 401 ||
+      errorCode === 403 ||
+      errorMessage.includes('unauthorized') ||
+      errorMessage.includes('api key')
+    ) {
+      return false;
+    }
+
+    // Don't fallback for explicit invalid request errors
+    if (errorCode === 400 || errorMessage.includes('bad request')) {
+      return false;
+    }
+
+    // Fallback for network issues, timeouts, server errors
+    if (
+      errorCode >= 500 ||
+      errorMessage.includes('timeout') ||
+      errorMessage.includes('network') ||
+      errorMessage.includes('econnrefused')
+    ) {
+      return true;
+    }
+
+    // Default to fallback for unknown errors
+    return true;
   }
 
   /**
@@ -282,6 +385,7 @@ class InferenceManager {
     source: 'local' | 'remote',
     model?: string,
   ): Promise<InferenceResult> {
+    await this.ensureInitialized();
     if (source === 'remote') {
       return this.askRemote(query, model);
     } else {
@@ -293,6 +397,7 @@ class InferenceManager {
    * Get remote models only
    */
   async getRemoteModels(): Promise<MorpheusModel[]> {
+    await this.ensureInitialized();
     const api = getMorpheusAPI();
     if (!api) {
       return [];

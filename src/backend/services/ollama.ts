@@ -184,24 +184,39 @@ export const getOllamaExecutableAndAppDataPath = (
 };
 
 export const askOllama = async (model: string, message: string) => {
-  return await ollama.chat({
-    model,
-    messages: [
-      {
-        role: 'system',
-        content: MOR_PROMPT,
-      },
-      {
-        role: 'user',
-        content: `Answer the following query in a valid JSON object with exactly these fields: "response" (your answer as a string) and "action" (object with any action data, can be empty {}). 
+  console.log(`[askOllama] Called with model: ${model}, message length: ${message.length}`);
+  console.log(`[askOllama] Ollama instance exists: ${!!ollama}`);
+
+  if (!ollama) {
+    console.error('[askOllama] Ollama instance is not initialized!');
+    throw new Error('Ollama instance is not initialized');
+  }
+
+  try {
+    const result = await ollama.chat({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: MOR_PROMPT,
+        },
+        {
+          role: 'user',
+          content: `Answer the following query in a valid JSON object with exactly these fields: "response" (your answer as a string) and "action" (object with any action data, can be empty {}). 
 
 Query: ${message}
 
 Respond with ONLY valid JSON in this exact format:
 {"response": "your answer here", "action": {}}`,
-      },
-    ],
-  });
+        },
+      ],
+    });
+    console.log('[askOllama] Chat completed successfully');
+    return result;
+  } catch (error) {
+    console.error('[askOllama] Error during chat:', error);
+    throw error;
+  }
 };
 
 export const getOrPullModel = async (model: string) => {
