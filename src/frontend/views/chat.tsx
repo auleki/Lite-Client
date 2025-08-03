@@ -4,9 +4,6 @@ import Styled from 'styled-components';
 import { useSDK } from '@metamask/sdk-react';
 import { ThreeDots } from 'react-loader-spinner';
 
-// components
-import InferenceModeButton from '../components/buttons/inference-mode-button';
-
 // types and helpers
 import { AIMessage } from '../types';
 import { InferenceMode, InferenceResult } from '../renderer';
@@ -423,20 +420,6 @@ const ChatView = (): React.JSX.Element => {
       </Chat.Main>
 
       <Chat.InputContainer>
-        <Chat.InferenceToggleWrapper>
-          <InferenceModeButton
-            currentMode={inferenceMode}
-            onToggle={handleInferenceModeToggle}
-            disabled={isOllamaBeingPolled}
-            compact={true}
-          />
-          <Chat.CurrentModeIndicator $mode={inferenceMode}>
-            <Chat.ModeText>
-              {inferenceMode === 'local' ? '🏠 Private & Local' : '☁️ Cloud Processing'}
-            </Chat.ModeText>
-          </Chat.CurrentModeIndicator>
-        </Chat.InferenceToggleWrapper>
-
         <Chat.InputWrapper>
           <Chat.Input
             ref={chatInputRef}
@@ -681,38 +664,6 @@ const Chat = {
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
     font-size: 1.2rem;
     font-weight: bold;
-  `,
-
-  // New inference-related styles
-  InferenceToggleWrapper: Styled.div`
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 15px;
-    padding: 10px 15px;
-    background: rgba(0, 0, 0, 0.1);
-    border-radius: 15px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-  `,
-
-  CurrentModeIndicator: Styled.div<{ $mode: InferenceMode }>`
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-radius: 20px;
-    background: ${({ $mode }) =>
-      $mode === 'remote'
-        ? 'linear-gradient(135deg, #4A90E2, #5BA2F0)'
-        : 'linear-gradient(135deg, #179C65, #20B574)'};
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  `,
-
-  ModeText: Styled.span`
-    color: white;
-    font-size: 12px;
-    font-weight: 500;
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
   `,
 
   AIHeader: Styled.div`

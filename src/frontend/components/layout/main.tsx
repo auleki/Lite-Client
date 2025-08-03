@@ -7,6 +7,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import TopBar from './top-bar';
 // import BottomBar from './bottom-bar';
 
+// components
+import InferenceModeButton from '../buttons/inference-mode-button';
+
+// types
+import { InferenceMode } from '../../renderer';
+
 // router
 import { MainRouter } from '../../router';
 
@@ -14,6 +20,9 @@ export default () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+
+  // Add inference mode state
+  const [inferenceMode, setInferenceMode] = useState<InferenceMode>('local');
 
   useEffect(() => {
     const loadCurrentModel = async () => {
@@ -92,7 +101,18 @@ export default () => {
       }
     };
 
+    // Load inference mode
+    const loadInferenceMode = async () => {
+      try {
+        const mode = await window.backendBridge.inference.getMode();
+        setInferenceMode(mode);
+      } catch (error) {
+        console.error('Failed to load inference mode:', error);
+      }
+    };
+
     loadCurrentModel();
+    loadInferenceMode();
   }, []);
 
   const handleNewChat = () => {
@@ -105,6 +125,19 @@ export default () => {
 
   const handleSettings = () => {
     navigate('/settings');
+  };
+
+  // Add inference mode toggle handler
+  const handleInferenceModeToggle = async () => {
+    const newMode: InferenceMode = inferenceMode === 'local' ? 'remote' : 'local';
+
+    try {
+      await window.backendBridge.inference.setMode(newMode);
+      setInferenceMode(newMode);
+    } catch (error) {
+      console.error('Failed to update inference mode:', error);
+      alert('Failed to update inference mode. Please ensure Ollama is running for local mode.');
+    }
   };
 
   const isActive = (path: string) => {
@@ -138,6 +171,22 @@ export default () => {
           </Main.SidebarActions>
 
           <Main.SidebarFooter>
+            {/* Add inference toggle here */}
+            <Main.InferenceToggleSection>
+              <Main.InferenceToggleLabel>Inference Mode</Main.InferenceToggleLabel>
+              <Main.InferenceToggleWrapper>
+                <InferenceModeButton
+                  currentMode={inferenceMode}
+                  onToggle={handleInferenceModeToggle}
+                  disabled={false}
+                  compact={false}
+                />
+              </Main.InferenceToggleWrapper>
+              <Main.InferenceModeIndicator $mode={inferenceMode}>
+                {inferenceMode === 'local' ? '🏠 Private & Local' : '☁️ Cloud Processing'}
+              </Main.InferenceModeIndicator>
+            </Main.InferenceToggleSection>
+
             <Main.StatusIndicator>
               <Main.StatusDot />
               <Main.StatusText>Ollama Connected</Main.StatusText>
@@ -240,6 +289,49 @@ const Main = {
     padding-top: 20px;
     border-top: 1px solid ${(props) => props.theme.colors.hunter};
   `,
+
+  // Add new inference toggle styles
+  InferenceToggleSection: Styled.div`
+    margin-bottom: 16px;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  `,
+
+  InferenceToggleLabel: Styled.div`
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-bottom: 8px;
+    text-align: center;
+    opacity: 0.8;
+  `,
+
+  InferenceToggleWrapper: Styled.div`
+    display: flex;
+    justify-content: center;
+    margin-bottom: 8px;
+  `,
+
+  InferenceModeIndicator: Styled.div<{ $mode: InferenceMode }>`
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+    border-radius: 12px;
+    background: ${({ $mode }) =>
+      $mode === 'remote' ? 'rgba(74, 144, 226, 0.15)' : 'rgba(23, 156, 101, 0.15)'};
+    border: 1px solid ${({ $mode }) =>
+      $mode === 'remote' ? 'rgba(74, 144, 226, 0.3)' : 'rgba(23, 156, 101, 0.3)'};
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-align: center;
+  `,
+
   StatusIndicator: Styled.div`
     display: flex;
     align-items: center;
