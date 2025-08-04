@@ -8,7 +8,9 @@ import TopBar from './top-bar';
 // import BottomBar from './bottom-bar';
 
 // components
-import InferenceModeButton from '../buttons/inference-mode-button';
+import ChatList from '../chat-list';
+import MigrationNotification from '../migration-notification';
+import { useChatContext } from '../../contexts/chat-context';
 
 // types
 import { InferenceMode } from '../../renderer';
@@ -20,9 +22,14 @@ export default () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [currentModel, setCurrentModel] = useState<string | null>(null);
-
-  // Add inference mode state
-  const [inferenceMode, setInferenceMode] = useState<InferenceMode>('local');
+  const {
+    currentChat,
+    createChat,
+    switchToChat,
+    deleteChat,
+    migrationCompleted,
+    dismissMigrationNotification,
+  } = useChatContext();
 
   useEffect(() => {
     const loadCurrentModel = async () => {
@@ -101,22 +108,30 @@ export default () => {
       }
     };
 
-    // Load inference mode
-    const loadInferenceMode = async () => {
-      try {
-        const mode = await window.backendBridge.inference.getMode();
-        setInferenceMode(mode);
-      } catch (error) {
-        console.error('Failed to load inference mode:', error);
-      }
-    };
-
     loadCurrentModel();
-    loadInferenceMode();
   }, []);
 
   const handleNewChat = () => {
+    // The new chat creation will be handled by the ChatList component
+    // Just navigate to chat route
     navigate('/chat');
+  };
+
+  const handleChatSelect = (chatId: string) => {
+    navigate(`/chat/${chatId}`);
+  };
+
+  const handleChatCreate = async (mode: 'local' | 'remote', model: string, title?: string) => {
+    const newChat = await createChat(mode, model, title);
+    navigate(`/chat/${newChat.id}`);
+  };
+
+  const handleChatDelete = async (chatId: string) => {
+    await deleteChat(chatId);
+    // If we deleted the current chat, navigate to home
+    if (currentChat?.id === chatId) {
+      navigate('/');
+    }
   };
 
   const handleModels = () => {
@@ -127,18 +142,7 @@ export default () => {
     navigate('/settings');
   };
 
-  // Add inference mode toggle handler
-  const handleInferenceModeToggle = async () => {
-    const newMode: InferenceMode = inferenceMode === 'local' ? 'remote' : 'local';
-
-    try {
-      await window.backendBridge.inference.setMode(newMode);
-      setInferenceMode(newMode);
-    } catch (error) {
-      console.error('Failed to update inference mode:', error);
-      alert('Failed to update inference mode. Please ensure Ollama is running for local mode.');
-    }
-  };
+  // Remove inference mode toggle since it's now per-chat
 
   const isActive = (path: string) => {
     return location.pathname === path;
@@ -154,11 +158,6 @@ export default () => {
           </Main.SidebarHeader>
 
           <Main.SidebarActions>
-            <Main.ActionButton onClick={handleNewChat} $active={isActive('/chat')}>
-              <Main.ActionIcon>💬</Main.ActionIcon>
-              <Main.ActionText>New Chat</Main.ActionText>
-            </Main.ActionButton>
-
             <Main.ActionButton onClick={handleModels} $active={isActive('/registry')}>
               <Main.ActionIcon>📦</Main.ActionIcon>
               <Main.ActionText>Models</Main.ActionText>
@@ -170,23 +169,17 @@ export default () => {
             </Main.ActionButton>
           </Main.SidebarActions>
 
-          <Main.SidebarFooter>
-            {/* Add inference toggle here */}
-            <Main.InferenceToggleSection>
-              <Main.InferenceToggleLabel>Inference Mode</Main.InferenceToggleLabel>
-              <Main.InferenceToggleWrapper>
-                <InferenceModeButton
-                  currentMode={inferenceMode}
-                  onToggle={handleInferenceModeToggle}
-                  disabled={false}
-                  compact={false}
-                />
-              </Main.InferenceToggleWrapper>
-              <Main.InferenceModeIndicator $mode={inferenceMode}>
-                {inferenceMode === 'local' ? '🏠 Private & Local' : '☁️ Cloud Processing'}
-              </Main.InferenceModeIndicator>
-            </Main.InferenceToggleSection>
+          {/* Chat List */}
+          <Main.ChatListSection>
+            <ChatList
+              currentChatId={currentChat?.id}
+              onChatSelect={handleChatSelect}
+              onChatCreate={handleChatCreate}
+              onChatDelete={handleChatDelete}
+            />
+          </Main.ChatListSection>
 
+          <Main.SidebarFooter>
             <Main.StatusIndicator>
               <Main.StatusDot />
               <Main.StatusText>Ollama Connected</Main.StatusText>
@@ -209,6 +202,9 @@ export default () => {
           <MainRouter />
         </Main.MainWrapper>
       </Main.ContentArea>
+
+      {/* Migration Notification */}
+      <MigrationNotification show={migrationCompleted} onDismiss={dismissMigrationNotification} />
     </Main.Layout>
   );
 };
@@ -256,7 +252,12 @@ const Main = {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-bottom: auto;
+    margin-bottom: 20px;
+  `,
+  ChatListSection: Styled.div`
+    flex: 1;
+    min-height: 0;
+    margin-bottom: 20px;
   `,
   ActionButton: Styled.button<{ $active: boolean }>`
     display: flex;
@@ -285,51 +286,8 @@ const Main = {
     font-weight: 500;
   `,
   SidebarFooter: Styled.div`
-    margin-top: auto;
     padding-top: 20px;
-    border-top: 1px solid ${(props) => props.theme.colors.hunter};
-  `,
-
-  // Add new inference toggle styles
-  InferenceToggleSection: Styled.div`
-    margin-bottom: 16px;
-    padding: 16px;
-    background: rgba(0, 0, 0, 0.1);
-    border-radius: 10px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-  `,
-
-  InferenceToggleLabel: Styled.div`
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: 0.8rem;
-    font-weight: 500;
-    margin-bottom: 8px;
-    text-align: center;
-    opacity: 0.8;
-  `,
-
-  InferenceToggleWrapper: Styled.div`
-    display: flex;
-    justify-content: center;
-    margin-bottom: 8px;
-  `,
-
-  InferenceModeIndicator: Styled.div<{ $mode: InferenceMode }>`
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 4px 8px;
-    border-radius: 12px;
-    background: ${({ $mode }) =>
-      $mode === 'remote' ? 'rgba(74, 144, 226, 0.15)' : 'rgba(23, 156, 101, 0.15)'};
-    border: 1px solid ${({ $mode }) =>
-      $mode === 'remote' ? 'rgba(74, 144, 226, 0.3)' : 'rgba(23, 156, 101, 0.3)'};
-    color: ${(props) => props.theme.colors.notice};
-    font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: 0.75rem;
-    font-weight: 500;
-    text-align: center;
+    border-top: 1px solid ${(props) => props.theme.colors.hunter}40;
   `,
 
   StatusIndicator: Styled.div`

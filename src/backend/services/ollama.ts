@@ -183,8 +183,44 @@ export const getOllamaExecutableAndAppDataPath = (
   };
 };
 
-export const askOllama = async (model: string, message: string) => {
+/**
+ * Warm up a model by loading it into memory (no response needed)
+ */
+export const warmUpModel = async (model: string): Promise<void> => {
+  if (!ollama) {
+    logger.warn('Cannot warm up model - Ollama not initialized');
+    return;
+  }
+
+  try {
+    logger.info(`Warming up model: ${model}`);
+
+    // Create a timeout wrapper for the warmup operation
+    const warmupPromise = ollama.chat({
+      model,
+      messages: [{ role: 'user', content: 'hello' }],
+      keep_alive: '10m',
+    });
+
+    // Set a generous 60-second timeout for warmup
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Model warmup timeout')), 60000);
+    });
+
+    await Promise.race([warmupPromise, timeoutPromise]);
+    logger.info(`Model ${model} warmed up successfully`);
+  } catch (error) {
+    if (error.message === 'Model warmup timeout') {
+      logger.warn(`Model ${model} warmup timed out after 60 seconds`);
+    } else {
+      logger.warn(`Failed to warm up model ${model}:`, error);
+    }
+  }
+};
+
+export const askOllama = async (model: string, message: string, conversationHistory?: any[]) => {
   console.log(`[askOllama] Called with model: ${model}, message length: ${message.length}`);
+  console.log(`[askOllama] Conversation history length: ${conversationHistory?.length || 0}`);
   console.log(`[askOllama] Ollama instance exists: ${!!ollama}`);
 
   if (!ollama) {
@@ -193,23 +229,39 @@ export const askOllama = async (model: string, message: string) => {
   }
 
   try {
+    // Build messages array with conversation history
+    const messages: any[] = [
+      {
+        role: 'system',
+        content: MOR_PROMPT,
+      },
+    ];
+
+    // Add conversation history if provided
+    if (conversationHistory && conversationHistory.length > 0) {
+      // Convert chat messages to Ollama format and add to messages
+      for (const historyMessage of conversationHistory) {
+        if (historyMessage.role === 'user' || historyMessage.role === 'assistant') {
+          messages.push({
+            role: historyMessage.role,
+            content: historyMessage.content,
+          });
+        }
+      }
+    }
+
+    // Add the current user message
+    messages.push({
+      role: 'user',
+      content: message,
+    });
+
+    console.log(`[askOllama] Sending ${messages.length} messages to model`);
+
     const result = await ollama.chat({
       model,
-      messages: [
-        {
-          role: 'system',
-          content: MOR_PROMPT,
-        },
-        {
-          role: 'user',
-          content: `Answer the following query in a valid JSON object with exactly these fields: "response" (your answer as a string) and "action" (object with any action data, can be empty {}). 
-
-Query: ${message}
-
-Respond with ONLY valid JSON in this exact format:
-{"response": "your answer here", "action": {}}`,
-        },
-      ],
+      messages,
+      keep_alive: '10m', // Keep model loaded for 10 minutes to avoid reload delays
     });
     console.log('[askOllama] Chat completed successfully');
     return result;

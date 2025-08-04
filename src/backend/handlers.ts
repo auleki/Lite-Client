@@ -24,6 +24,7 @@ import {
   saveLastUsedLocalModelToStorage,
   getLastUsedLocalModelFromStorage,
 } from './storage';
+import ChatManager from './services/chat-manager';
 import { logger } from './services/logger';
 
 export const initOllama = async (_: Electron.IpcMainEvent) => {
@@ -212,7 +213,7 @@ const handleError = (err: Error) => {
 export const getInferenceModeHandler = async (_: Electron.IpcMainEvent) => {
   try {
     const manager = getInferenceManager();
-    return manager.getInferenceMode();
+    return await manager.getInferenceMode();
   } catch (err) {
     handleError(err);
     return 'local'; // Default fallback
@@ -233,7 +234,7 @@ export const setInferenceModeHandler = async (_: Electron.IpcMainEvent, mode: In
 export const getMorpheusConfigHandler = async (_: Electron.IpcMainEvent) => {
   try {
     const manager = getInferenceManager();
-    return manager.getMorpheusConfig();
+    return await manager.getMorpheusConfig();
   } catch (err) {
     handleError(err);
     return null;
@@ -331,5 +332,126 @@ export const getAvailableInferenceModelsHandler = async (_: Electron.IpcMainEven
   } catch (err) {
     handleError(err);
     return [];
+  }
+};
+
+// =====================================
+// Chat Management Handlers
+// =====================================
+
+let chatManager: ChatManager | null = null;
+
+const getChatManager = () => {
+  if (!chatManager) {
+    chatManager = new ChatManager();
+  }
+  return chatManager;
+};
+
+export const createChatHandler = async (
+  _: Electron.IpcMainEvent,
+  mode: 'local' | 'remote',
+  model: string,
+  title?: string,
+) => {
+  try {
+    const manager = getChatManager();
+    return manager.createChat(mode, model, title);
+  } catch (err) {
+    handleError(err);
+    throw err;
+  }
+};
+
+export const getChatsHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const manager = getChatManager();
+    return manager.getChats();
+  } catch (err) {
+    handleError(err);
+    return [];
+  }
+};
+
+export const getChatHandler = async (_: Electron.IpcMainEvent, chatId: string) => {
+  try {
+    const manager = getChatManager();
+    return manager.getChat(chatId);
+  } catch (err) {
+    handleError(err);
+    return null;
+  }
+};
+
+export const getCurrentChatHandler = async (_: Electron.IpcMainEvent) => {
+  try {
+    const manager = getChatManager();
+    return manager.getCurrentChat();
+  } catch (err) {
+    handleError(err);
+    return null;
+  }
+};
+
+export const switchToChatHandler = async (_: Electron.IpcMainEvent, chatId: string) => {
+  try {
+    const manager = getChatManager();
+    return manager.switchToChat(chatId);
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+};
+
+export const deleteChatHandler = async (_: Electron.IpcMainEvent, chatId: string) => {
+  try {
+    const manager = getChatManager();
+    return manager.deleteChat(chatId);
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+};
+
+export const sendChatMessageHandler = async (
+  _: Electron.IpcMainEvent,
+  chatId: string,
+  message: string,
+) => {
+  try {
+    const manager = getChatManager();
+    return await manager.sendMessage(chatId, message);
+  } catch (err) {
+    handleError(err);
+    throw err;
+  }
+};
+
+export const updateChatTitleHandler = async (
+  _: Electron.IpcMainEvent,
+  chatId: string,
+  title: string,
+) => {
+  try {
+    const manager = getChatManager();
+    return manager.updateChatTitle(chatId, title);
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+};
+
+export const migrateChatHandler = async (
+  _: Electron.IpcMainEvent,
+  messages: any[],
+  mode: 'local' | 'remote',
+  model: string,
+) => {
+  try {
+    const manager = getChatManager();
+    return manager.migrateExistingChat(messages, mode, model);
+  } catch (err) {
+    handleError(err);
+    throw err;
   }
 };

@@ -10,7 +10,7 @@ import AppInit from './components/layout/app-init';
 
 // providers
 import ThemeProvider from './theme/theme-provider';
-import { AIMessagesProvider } from './contexts';
+import { ChatProvider } from './contexts/chat-context';
 // import { MetaMaskProvider } from '@metamask/sdk-react';
 
 // modals
@@ -40,6 +40,13 @@ const AppRoot = () => {
   }, []);
 
   const handleOllamaInit = async () => {
+    // Initialize inference manager first
+    try {
+      await window.backendBridge.inference.getMode(); // This will trigger initialization
+    } catch (error) {
+      console.warn('Failed to initialize inference manager:', error);
+    }
+
     const ollamaInit = await window.backendBridge.ollama.init();
 
     if (ollamaInit) {
@@ -81,10 +88,10 @@ const AppRoot = () => {
   return (
     <React.StrictMode>
       <ThemeProvider>
-        <AIMessagesProvider>
+        <ChatProvider>
           {!isInitialized && <AppInit />}
           {isInitialized && <Main />}
-        </AIMessagesProvider>
+        </ChatProvider>
       </ThemeProvider>
     </React.StrictMode>
   );

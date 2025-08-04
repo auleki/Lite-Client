@@ -1,6 +1,7 @@
 // libs
 import React, { useState, useEffect } from 'react';
 import Styled from 'styled-components';
+import { MonitorSpeaker, Globe, AlertTriangle } from 'lucide-react';
 
 // types
 import { InferenceMode } from '../renderer';
@@ -54,7 +55,7 @@ const InferenceToggle: React.FC<InferenceToggleProps> = ({
     <Toggle.Container $size={size}>
       {showLabels && (
         <Toggle.Label $active={currentMode === 'local'} $size={size}>
-          🏠 Local
+          <MonitorSpeaker size={12} /> Local
         </Toggle.Label>
       )}
 
@@ -66,15 +67,19 @@ const InferenceToggle: React.FC<InferenceToggleProps> = ({
         title={`Switch to ${currentMode === 'local' ? 'remote' : 'local'} inference`}
       >
         <Toggle.Slider $active={currentMode === 'remote'} $size={size}>
-          <Toggle.Icon>{currentMode === 'local' ? '🏠' : '☁️'}</Toggle.Icon>
+          <Toggle.Icon>
+            {currentMode === 'local' ? <MonitorSpeaker size={10} /> : <Globe size={10} />}
+          </Toggle.Icon>
         </Toggle.Slider>
       </Toggle.Switch>
 
       {showLabels && (
         <Toggle.Label $active={currentMode === 'remote'} $size={size}>
-          ☁️ Remote
+          <Globe size={12} /> Remote
           {!isRemoteConfigured && (
-            <Toggle.Warning title="Remote inference not configured">⚠️</Toggle.Warning>
+            <Toggle.Warning title="Remote inference not configured">
+              <AlertTriangle size={10} />
+            </Toggle.Warning>
           )}
         </Toggle.Label>
       )}
@@ -183,14 +188,24 @@ const Toggle = {
   `,
 
   Icon: Styled.span`
-    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     line-height: 1;
+    
+    svg {
+      color: #666;
+    }
   `,
 
   Warning: Styled.span`
-    color: #ffa500;
-    font-size: 10px;
-    margin-left: 2px;
+    display: flex;
+    align-items: center;
+    margin-left: 4px;
+    
+    svg {
+      color: #ffa500;
+    }
   `,
 
   Status: Styled.div<{ $mode: InferenceMode; $size: 'small' | 'medium' | 'large' }>`

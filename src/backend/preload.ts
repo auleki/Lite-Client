@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { ChatResponse, GenerateResponse, ListResponse, ModelResponse } from 'ollama';
-import { IpcChannel, OllamaChannel, InferenceChannel, MorpheusChannel } from '../events';
+import {
+  IpcChannel,
+  OllamaChannel,
+  InferenceChannel,
+  MorpheusChannel,
+  ChatChannel,
+} from '../events';
 import { OllamaQuestion, InferenceMode, MorpheusAPIConfig } from './types';
 
 contextBridge.exposeInMainWorld('backendBridge', {
@@ -69,6 +75,23 @@ contextBridge.exposeInMainWorld('backendBridge', {
         model: string;
       }>,
     getModels: () => ipcRenderer.invoke('ai:getmodels') as Promise<any[]>,
+  },
+  chat: {
+    create: (mode: 'local' | 'remote', model: string, title?: string) =>
+      ipcRenderer.invoke(ChatChannel.CreateChat, mode, model, title) as Promise<any>,
+    getAll: () => ipcRenderer.invoke(ChatChannel.GetChats) as Promise<any[]>,
+    get: (chatId: string) => ipcRenderer.invoke(ChatChannel.GetChat, chatId) as Promise<any>,
+    getCurrent: () => ipcRenderer.invoke(ChatChannel.GetCurrentChat) as Promise<any>,
+    switchTo: (chatId: string) =>
+      ipcRenderer.invoke(ChatChannel.SwitchToChat, chatId) as Promise<boolean>,
+    delete: (chatId: string) =>
+      ipcRenderer.invoke(ChatChannel.DeleteChat, chatId) as Promise<boolean>,
+    sendMessage: (chatId: string, message: string) =>
+      ipcRenderer.invoke(ChatChannel.SendMessage, chatId, message) as Promise<string>,
+    updateTitle: (chatId: string, title: string) =>
+      ipcRenderer.invoke(ChatChannel.UpdateTitle, chatId, title) as Promise<boolean>,
+    migrate: (messages: any[], mode: 'local' | 'remote', model: string) =>
+      ipcRenderer.invoke(ChatChannel.MigrateChat, messages, mode, model) as Promise<any>,
   },
   removeAllListeners(channel: string) {
     ipcRenderer.removeAllListeners(channel);

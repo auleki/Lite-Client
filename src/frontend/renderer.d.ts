@@ -89,6 +89,17 @@ export interface BackendBridge {
     ) => Promise<InferenceResult>;
     getModels: () => Promise<InferenceModel[]>;
   };
+  chat: {
+    create: (mode: 'local' | 'remote', model: string, title?: string) => Promise<Chat>;
+    getAll: () => Promise<Chat[]>;
+    get: (chatId: string) => Promise<Chat | null>;
+    getCurrent: () => Promise<Chat | null>;
+    switchTo: (chatId: string) => Promise<boolean>;
+    delete: (chatId: string) => Promise<boolean>;
+    sendMessage: (chatId: string, message: string) => Promise<string>;
+    updateTitle: (chatId: string, title: string) => Promise<boolean>;
+    migrate: (messages: any[], mode: 'local' | 'remote', model: string) => Promise<Chat>;
+  };
   removeAllListeners: (channel: string) => void;
 }
 
@@ -111,6 +122,24 @@ export interface CacheStatus {
   age: number | null;
   isExpired: boolean;
   cacheDuration?: number;
+}
+
+// Chat types (importing from frontend types)
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: Date;
+}
+
+export interface Chat {
+  id: string;
+  title: string;
+  mode: 'local' | 'remote';
+  model: string;
+  messages: ChatMessage[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 declare global {

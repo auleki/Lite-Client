@@ -216,7 +216,11 @@ class InferenceManager {
   /**
    * Ask a question using local inference (Ollama)
    */
-  private async askLocal(query: string, model?: string): Promise<InferenceResult> {
+  private async askLocal(
+    query: string,
+    model?: string,
+    conversationHistory?: any[],
+  ): Promise<InferenceResult> {
     console.log('[InferenceManager] askLocal() called');
     try {
       // Use provided model or get stored preferred model or get current model or get first available model
@@ -269,13 +273,46 @@ class InferenceManager {
 
       logger.info(`Using local model: ${targetModel}`);
       console.log(`[InferenceManager] About to call askOllama with model: ${targetModel}`);
-      const chatResponse = await askOllama(targetModel, query);
+      console.log(
+        `[InferenceManager] Conversation history: ${conversationHistory?.length || 0} messages`,
+      );
+      const chatResponse = await askOllama(targetModel, query, conversationHistory);
       console.log('[InferenceManager] askOllama completed successfully');
       console.log('[InferenceManager] Raw chat response:', JSON.stringify(chatResponse, null, 2));
       console.log('[InferenceManager] Chat response content:', chatResponse.message.content);
 
+      // Parse JSON response to extract just the response text
+      let responseText = chatResponse.message.content;
+      try {
+        // First try parsing the entire response as JSON
+        const parsedResponse = JSON.parse(responseText.trim());
+        if (parsedResponse.response) {
+          responseText = parsedResponse.response;
+          console.log('[InferenceManager] Extracted response text:', responseText);
+        }
+      } catch (error) {
+        // If that fails, try to extract JSON from within the text
+        try {
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsedResponse = JSON.parse(jsonMatch[0]);
+            if (parsedResponse.response) {
+              responseText = parsedResponse.response;
+              console.log(
+                '[InferenceManager] Extracted response text from embedded JSON:',
+                responseText,
+              );
+            }
+          } else {
+            console.log('[InferenceManager] No JSON found, using raw response');
+          }
+        } catch (innerError) {
+          console.log('[InferenceManager] Failed to parse embedded JSON, using raw response');
+        }
+      }
+
       return {
-        response: chatResponse.message.content,
+        response: responseText,
         source: 'local',
         model: targetModel,
       };
@@ -289,11 +326,15 @@ class InferenceManager {
   /**
    * Ask a question using remote inference (Morpheus API) with automatic fallback
    */
-  private async askRemote(query: string, model?: string): Promise<InferenceResult> {
+  private async askRemote(
+    query: string,
+    model?: string,
+    conversationHistory?: any[],
+  ): Promise<InferenceResult> {
     const api = getMorpheusAPI();
     if (!api) {
       logger.warn('Morpheus API not configured, falling back to local mode');
-      return this.askLocal(query, model);
+      return this.askLocal(query, model, conversationHistory);
     }
 
     try {
@@ -301,11 +342,45 @@ class InferenceManager {
       const targetModel = model || this.morpheusConfig?.defaultModel || 'llama-3.3-70b';
 
       logger.info(`Attempting remote inference with model: ${targetModel}`);
-      const response = await api.ask(query, targetModel);
+
+      // Build messages array with conversation history
+      const messages: any[] = [];
+
+      // Add conversation history if provided
+      if (conversationHistory && conversationHistory.length > 0) {
+        logger.info(`Including conversation history: ${conversationHistory.length} messages`);
+        for (const historyMessage of conversationHistory) {
+          if (historyMessage.role === 'user' || historyMessage.role === 'assistant') {
+            messages.push({
+              role: historyMessage.role,
+              content: historyMessage.content,
+            });
+          }
+        }
+      }
+
+      // Add current user message
+      messages.push({
+        role: 'user',
+        content: query,
+      });
+
+      // Use the chat method directly instead of ask to support conversation history
+      const chatResponse = await api.chat({
+        model: targetModel,
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 2048,
+      });
+
+      const responseContent = chatResponse.choices[0]?.message?.content;
+      if (!responseContent) {
+        throw new Error('No response content received from Morpheus API');
+      }
 
       logger.info('Remote inference successful');
       return {
-        response,
+        response: responseContent,
         source: 'remote',
         model: targetModel,
       };
@@ -318,13 +393,17 @@ class InferenceManager {
       if (shouldFallback) {
         logger.info('Falling back to local inference due to remote failure');
         try {
-          const localResult = await this.askLocal(query, model);
+          // Use a default local model for fallback instead of the remote model name
+          const localFallbackModel =
+            (await getLastUsedLocalModelFromStorage()) || 'orca-mini:latest';
+          logger.info(`Using local fallback model: ${localFallbackModel}`);
+          const localResult = await this.askLocal(query, localFallbackModel, conversationHistory);
           // Add a note to the response indicating fallback
           return {
             ...localResult,
             response:
               localResult.response +
-              '\n\n*Note: Responded using local inference due to remote API unavailability.*',
+              `\n\n*Note: Responded using local model (${localFallbackModel}) due to remote API unavailability.*`,
           };
         } catch (localError) {
           logger.error('Local fallback also failed:', localError);
@@ -384,12 +463,13 @@ class InferenceManager {
     query: string,
     source: 'local' | 'remote',
     model?: string,
+    conversationHistory?: any[],
   ): Promise<InferenceResult> {
     await this.ensureInitialized();
     if (source === 'remote') {
-      return this.askRemote(query, model);
+      return this.askRemote(query, model, conversationHistory);
     } else {
-      return this.askLocal(query, model);
+      return this.askLocal(query, model, conversationHistory);
     }
   }
 

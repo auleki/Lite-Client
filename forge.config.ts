@@ -16,7 +16,7 @@ import { rendererConfig } from './webpack.renderer.config';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
-    name: 'morpheus',
+    name: 'Morpheus',
     extraResource: ['./executables/'],
     icon: 'src/frontend/assets/images/circle-mor-logo',
     osxSign: {

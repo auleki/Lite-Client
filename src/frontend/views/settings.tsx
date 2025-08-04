@@ -9,8 +9,7 @@ const SettingsView = (): React.JSX.Element => {
   const [modelsPath, setModelsPath] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Inference settings
-  const [inferenceMode, setInferenceMode] = useState<InferenceMode>('local');
+  // Morpheus API settings
   const [morpheusConfig, setMorpheusConfig] = useState<MorpheusAPIConfig>({
     apiKey: '',
     baseUrl: 'https://api.mor.org/api/v1',
@@ -27,13 +26,11 @@ const SettingsView = (): React.JSX.Element => {
         // Load current settings
         const currentModelsPath = await window.backendBridge.main.getFolderPath();
 
-        // Load inference settings
-        const currentMode = await window.backendBridge.inference.getMode();
+        // Load Morpheus API configuration
         const currentConfig = await window.backendBridge.inference.getMorpheusConfig();
 
         setOllamaPath('Default'); // Ollama path is not configurable in this version
         setModelsPath(currentModelsPath || 'Default');
-        setInferenceMode(currentMode);
 
         if (currentConfig) {
           setMorpheusConfig(currentConfig);
@@ -72,22 +69,26 @@ const SettingsView = (): React.JSX.Element => {
     }
   };
 
-  // Inference handlers
-  const handleInferenceModeChange = async (mode: InferenceMode) => {
-    try {
-      await window.backendBridge.inference.setMode(mode);
-      setInferenceMode(mode);
-    } catch (error) {
-      console.error('Failed to set inference mode:', error);
-      alert('Failed to update inference mode. Please try again.');
-    }
-  };
+  // Morpheus API handlers
 
   const handleMorpheusConfigSave = async () => {
     try {
+      // Basic validation
+      if (!morpheusConfig.apiKey?.trim()) {
+        alert('Please enter an API key before saving.');
+        return;
+      }
+
+      if (!morpheusConfig.baseUrl?.trim()) {
+        alert('Please enter a valid API endpoint.');
+        return;
+      }
+
       await window.backendBridge.inference.setMorpheusConfig(morpheusConfig);
       setConnectionStatus('unknown');
-      alert('Configuration saved successfully!');
+      alert(
+        'Configuration saved successfully! You can now test the connection or switch to remote mode.',
+      );
     } catch (error) {
       console.error('Failed to save Morpheus config:', error);
       alert('Failed to save configuration. Please try again.');
@@ -156,24 +157,10 @@ const SettingsView = (): React.JSX.Element => {
 
       <Settings.Section>
         <Settings.SectionTitle>Remote Inference (Morpheus API)</Settings.SectionTitle>
-
-        <Settings.SettingRow>
-          <Settings.SettingLabel>Default Mode:</Settings.SettingLabel>
-          <Settings.ModeToggle>
-            <Settings.ModeButton
-              $active={inferenceMode === 'local'}
-              onClick={() => handleInferenceModeChange('local')}
-            >
-              🏠 Local
-            </Settings.ModeButton>
-            <Settings.ModeButton
-              $active={inferenceMode === 'remote'}
-              onClick={() => handleInferenceModeChange('remote')}
-            >
-              ☁️ Remote
-            </Settings.ModeButton>
-          </Settings.ModeToggle>
-        </Settings.SettingRow>
+        <Settings.SectionDescription>
+          Configure your Morpheus API settings for remote chat sessions. Each chat can be set to
+          local or remote mode when created.
+        </Settings.SectionDescription>
 
         <Settings.SettingRow>
           <Settings.SettingLabel>API Endpoint:</Settings.SettingLabel>
@@ -328,7 +315,15 @@ const Settings = {
     color: ${(props) => props.theme.colors.emerald};
     font-family: ${(props) => props.theme.fonts.family.primary.bold};
     font-size: 1.3rem;
-    margin: 0 0 20px 0;
+    margin: 0 0 8px 0;
+  `,
+  SectionDescription: Styled.p`
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.secondary.regular};
+    font-size: 0.9rem;
+    margin: 0 0 16px 0;
+    opacity: 0.7;
+    line-height: 1.4;
   `,
   SettingRow: Styled.div`
     display: flex;
@@ -412,31 +407,6 @@ const Settings = {
   `,
 
   // Remote Inference styles
-  ModeToggle: Styled.div`
-    display: flex;
-    gap: 8px;
-  `,
-
-  ModeButton: Styled.button<{ $active: boolean }>`
-    padding: 8px 16px;
-    border: 2px solid ${({ $active }) => ($active ? '#179C65' : '#4A90E2')};
-    border-radius: 8px;
-    background: ${({ $active }) =>
-      $active
-        ? 'linear-gradient(135deg, #179C65, #20B574)'
-        : 'linear-gradient(135deg, #4A90E2, #5BA2F0)'};
-    color: white;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    outline: none;
-
-    &:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    }
-  `,
 
   InputField: Styled.input`
     padding: 10px 12px;

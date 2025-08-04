@@ -66,7 +66,7 @@ class MorpheusAPIService {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
       },
-      timeout: 60000, // 60 second timeout
+      timeout: 10000, // 10 second timeout
     });
 
     // Add request/response interceptors for logging
@@ -107,6 +107,31 @@ class MorpheusAPIService {
   }
 
   /**
+   * Validate API key format (basic validation)
+   */
+  static validateApiKey(apiKey: string): { valid: boolean; message?: string } {
+    if (!apiKey) {
+      return { valid: false, message: 'API key is required' };
+    }
+
+    if (apiKey.length < 10) {
+      return { valid: false, message: 'API key appears to be too short' };
+    }
+
+    if (apiKey.includes(' ')) {
+      return { valid: false, message: 'API key should not contain spaces' };
+    }
+
+    // Basic format check - should be alphanumeric with possible special chars
+    const validPattern = /^[a-zA-Z0-9\-_.]+$/;
+    if (!validPattern.test(apiKey)) {
+      return { valid: false, message: 'API key contains invalid characters' };
+    }
+
+    return { valid: true };
+  }
+
+  /**
    * Get available models from Morpheus API
    */
   async getModels(): Promise<MorpheusModel[]> {
@@ -124,11 +149,39 @@ class MorpheusAPIService {
    */
   async chat(request: MorpheusChatRequest): Promise<MorpheusChatResponse> {
     try {
+      logger.info('Morpheus chat request:', {
+        model: request.model,
+        messages: request.messages?.length,
+      });
       const response = await this.client.post<MorpheusChatResponse>('/chat/completions', request);
       return response.data;
     } catch (error) {
-      logger.error('Morpheus chat request failed:', error);
-      throw new Error('Failed to get response from Morpheus API');
+      // Log detailed error information
+      if (error.response) {
+        logger.error('Morpheus chat HTTP error:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          url: error.config?.url,
+        });
+
+        // Check for session expiration
+        const errorData = error.response.data;
+        if (errorData?.error?.message?.includes('session expired')) {
+          throw new Error('Morpheus API session expired. Please refresh your API key in Settings.');
+        }
+      } else if (error.request) {
+        logger.error('Morpheus chat network error:', {
+          message: error.message,
+          code: error.code,
+          url: error.config?.url,
+        });
+      } else {
+        logger.error('Morpheus chat request setup error:', error.message);
+      }
+      throw new Error(
+        `Failed to get response from Morpheus API: ${error.response?.status || error.message}`,
+      );
     }
   }
 
@@ -170,9 +223,9 @@ class MorpheusAPIService {
   }
 
   /**
-   * Simple question/answer interface for compatibility with existing Ollama interface
+   * Simple question/answer interface with retry logic
    */
-  async ask(query: string, model: string = 'llama-3.3-70b'): Promise<string> {
+  async ask(query: string, model: string = 'llama-3.3-70b', retries: number = 2): Promise<string> {
     const request: MorpheusChatRequest = {
       model,
       messages: [
@@ -185,13 +238,42 @@ class MorpheusAPIService {
       max_tokens: 2048,
     };
 
-    try {
-      const response = await this.chat(request);
-      return response.choices[0]?.message?.content || 'No response received';
-    } catch (error) {
-      logger.error('Morpheus ask failed:', error);
-      throw error;
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        logger.info(`Morpheus API attempt ${attempt + 1}/${retries + 1} for model ${model}`);
+        const response = await this.chat(request);
+        const content = response.choices[0]?.message?.content;
+
+        if (!content) {
+          throw new Error('No response content received from Morpheus API');
+        }
+
+        logger.info(`Morpheus API successful on attempt ${attempt + 1}`);
+        return content;
+      } catch (error) {
+        lastError = error;
+        logger.warn(`Morpheus API attempt ${attempt + 1} failed:`, error);
+
+        // Don't retry for authentication/client errors
+        const errorStatus = error.response?.status;
+        if (errorStatus && (errorStatus === 401 || errorStatus === 403 || errorStatus === 400)) {
+          logger.info('Not retrying due to client/auth error');
+          break;
+        }
+
+        // Wait before retrying (exponential backoff)
+        if (attempt < retries) {
+          const delayMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+          logger.info(`Waiting ${delayMs}ms before retry...`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
     }
+
+    logger.error('All Morpheus API attempts failed:', lastError);
+    throw lastError;
   }
 }
 

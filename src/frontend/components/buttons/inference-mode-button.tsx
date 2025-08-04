@@ -1,6 +1,7 @@
 // libs
 import React from 'react';
 import Styled from 'styled-components';
+import { MonitorSpeaker, Globe } from 'lucide-react';
 
 // types
 import { InferenceMode } from '../../renderer';
@@ -29,7 +30,9 @@ const InferenceModeButton: React.FC<InferenceModeButtonProps> = ({
       disabled={disabled}
       title={`Switch to ${isRemote ? 'local' : 'remote'} inference`}
     >
-      <Button.Icon $isRemote={isRemote}>{isRemote ? '☁️' : '🏠'}</Button.Icon>
+      <Button.Icon $isRemote={isRemote}>
+        {isRemote ? <Globe size={14} /> : <MonitorSpeaker size={14} />}
+      </Button.Icon>
       {!compact && (
         <Button.Label $isRemote={isRemote}>{isRemote ? 'Remote' : 'Local'}</Button.Label>
       )}
@@ -74,8 +77,14 @@ const ButtonContainer = Styled.button<{
 `;
 
 const ButtonIcon = Styled.span<{ $isRemote: boolean }>`
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.2s ease;
+  
+  svg {
+    color: white;
+  }
   
   ${ButtonContainer}:hover & {
     transform: scale(1.1);

@@ -41,6 +41,18 @@ export enum MorpheusChannel {
   MorpheusInit = 'morpheus:init',
 }
 
+export enum ChatChannel {
+  CreateChat = 'chat:create',
+  GetChats = 'chat:getall',
+  GetChat = 'chat:get',
+  GetCurrentChat = 'chat:getcurrent',
+  SwitchToChat = 'chat:switch',
+  DeleteChat = 'chat:delete',
+  SendMessage = 'chat:sendmessage',
+  UpdateTitle = 'chat:updatetitle',
+  MigrateChat = 'chat:migrate',
+}
+
 export enum IpcMainChannel {
   Error = 'main:error',
   CommandOuput = 'command:output',
