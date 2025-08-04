@@ -32,7 +32,6 @@ const config: ForgeConfig = {
       /^\/RELEASE_NOTES/,
       // Build artifacts and dependencies already excluded by default
       /^\/out/,
-      /^\/\.webpack/,
       /^\/node_modules/,
     ],
     osxSign: {
