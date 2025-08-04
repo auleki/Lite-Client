@@ -1,7 +1,7 @@
 {
   "name": "morpheus",
   "productName": "Morpheus",
-  "version": "0.6.0",
+  "version": "0.6.1-daily.0",
   "description": "Morpheus is private, sovereign, AI",
   "main": ".webpack/main",
   "scripts": {
@@ -13,6 +13,9 @@
     "publish-github-minor": "yarn version --minor && git push --follow-tags",
     "publish-github-major": "yarn version --major && git push --follow-tags",
     "publish-github-patch": "yarn version --patch && git push --follow-tags",
+    "publish-daily": "yarn version --prerelease --preid=daily && git push --follow-tags",
+    "daily": "yarn publish-daily",
+    "daily-full": "yarn version --prerelease --preid=daily && yarn make && git push --follow-tags",
     "lint": "eslint --ext .ts,.tsx .",
     "pretty": "npx prettier --no-error-on-unmatched-pattern src/**/*.{js,jsx,ts,tsx,json,css} --write",
     "prepare": "husky"
@@ -83,6 +86,7 @@
     "@metamask/sdk": "^0.14.2",
     "@metamask/sdk-react": "^0.14.2",
     "@metamask/sdk-react-ui": "^0.14.3",
+    "@types/react": "^19.1.9",
     "axios": "^1.11.0",
     "check-disk-space": "^3.4.0",
     "electron-squirrel-startup": "^1.0.0",
@@ -91,6 +95,8 @@
     "lucide-react": "^0.536.0",
     "ollama": "^0.4.3",
     "qrcode": "^1.5.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
     "react-loader-spinner": "^6.1.6",
     "react-router-dom": "^6.21.3",
     "react-transition-group": "^4.4.5",
