@@ -19,6 +19,22 @@ const config: ForgeConfig = {
     name: 'Morpheus',
     extraResource: ['./executables/'],
     icon: 'src/frontend/assets/images/circle-mor-logo',
+    ignore: [
+      // Cursor AI agent configuration files
+      /^\/\.cursor-agent-instructions\.md$/,
+      /^\/\.cursor-agent-personal\.md$/,
+      // Build utilities
+      /^\/sync-agent-config\.sh$/,
+      // Standard development files
+      /^\/\.git/,
+      /^\/\.gitignore$/,
+      /^\/README\.md$/,
+      /^\/RELEASE_NOTES/,
+      // Build artifacts and dependencies already excluded by default
+      /^\/out/,
+      /^\/\.webpack/,
+      /^\/node_modules/,
+    ],
     osxSign: {
       identity: process.env.APPLE_DEVELOPER_ID,
       optionsForFile: () => {
