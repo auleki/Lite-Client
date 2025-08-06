@@ -25,7 +25,7 @@ import { logger } from './logger';
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434/';
 
 // Cache configuration
-const CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+const CACHE_DURATION = 1 * 1000; // 1 second for testing
 
 // In-memory cache
 let registryCache: {
@@ -322,26 +322,99 @@ export const stopOllama = async () => {
   ollamaProcess = null;
 };
 
+// Function to estimate model size based on parameter count in name
+const estimateModelSize = (modelName: string): number => {
+  if (!modelName) {
+    return 4.1 * 1024 * 1024 * 1024; // Default size for unknown models
+  }
+  const name = modelName.toLowerCase();
+
+  // Extract parameter count indicators based on research data
+  if (name.includes('0.5b') || name.includes('0.6b')) {
+    return 0.7 * 1024 * 1024 * 1024; // ~0.7GB for 0.5B models
+  }
+  if (name.includes('1.5b') || name.includes('1.7b')) {
+    return 1.2 * 1024 * 1024 * 1024; // ~1.2GB for 1.5B models
+  }
+  if (name.includes('1b') || (name.includes('1.') && name.includes('b'))) {
+    return 1.0 * 1024 * 1024 * 1024; // ~1.0GB for 1B models
+  }
+  if (name.includes('3b') || name.includes('2.7b')) {
+    return 2.0 * 1024 * 1024 * 1024; // ~2.0GB for 3B models
+  }
+  if (name.includes('4b')) {
+    return 2.5 * 1024 * 1024 * 1024; // ~2.5GB for 4B models
+  }
+  if (name.includes('7b') || name.includes('8b') || name.includes('6b')) {
+    return 4.1 * 1024 * 1024 * 1024; // ~4.1GB for 7B models
+  }
+  if (
+    name.includes('13b') ||
+    name.includes('14b') ||
+    name.includes('11b') ||
+    name.includes('12b')
+  ) {
+    return 9.0 * 1024 * 1024 * 1024; // ~9.0GB for 14B models
+  }
+  if (name.includes('30b') || name.includes('32b') || name.includes('33b')) {
+    return 18 * 1024 * 1024 * 1024; // ~18GB for 30B models
+  }
+  if (name.includes('70b') || name.includes('72b')) {
+    return 40 * 1024 * 1024 * 1024; // ~40GB for 70B models
+  }
+  if (name.includes('235b') || name.includes('200b')) {
+    return 140 * 1024 * 1024 * 1024; // ~140GB for 235B models
+  }
+  if (name.includes('671b') || name.includes('600b')) {
+    return 400 * 1024 * 1024 * 1024; // ~400GB for 671B models
+  }
+
+  // Special cases for specific model families
+  if (name.includes('orca-mini')) {
+    return 1.9 * 1024 * 1024 * 1024; // ~1.9GB for Orca Mini (3B)
+  }
+  if (name.includes('phi') && !name.includes('dolphin')) {
+    if (name.includes('phi-2') || name.includes('phi2')) {
+      return 1.7 * 1024 * 1024 * 1024; // ~1.7GB for Phi-2
+    }
+    if (name.includes('phi-3') || name.includes('phi3')) {
+      return 2.3 * 1024 * 1024 * 1024; // ~2.3GB for Phi-3
+    }
+    if (name.includes('phi-4') || name.includes('phi4')) {
+      return 9.1 * 1024 * 1024 * 1024; // ~9.1GB for Phi-4 (14B)
+    }
+  }
+  if (name.includes('gemma')) {
+    if (name.includes('2b')) {
+      return 1.4 * 1024 * 1024 * 1024; // ~1.4GB for Gemma 2B
+    }
+    return 4.8 * 1024 * 1024 * 1024; // ~4.8GB for Gemma 7B
+  }
+
+  // Default fallback for unknown sizes (assume 7B-class)
+  return 4.1 * 1024 * 1024 * 1024; // ~4.1GB for 7B-class models
+};
+
 // New function to fetch models from Ollama registry with caching
 export const getAvailableModelsFromRegistry = async (forceRefresh = false) => {
   try {
-    // Load from persistent storage if in-memory cache is empty
-    if (!registryCache) {
-      loadCacheFromStorage();
-    }
+    // Disable all caching for now
+    // if (!registryCache) {
+    //   loadCacheFromStorage();
+    // }
 
     // Check cache first (unless force refresh is requested)
-    if (!forceRefresh && registryCache && Date.now() - registryCache.timestamp < CACHE_DURATION) {
-      logger.info('Returning cached registry data');
-      return registryCache.data;
-    }
+    // if (!forceRefresh && registryCache && Date.now() - registryCache.timestamp < CACHE_DURATION) {
+    //   logger.info('Returning cached registry data');
+    //   return registryCache.data;
+    // }
 
     logger.info('Fetching fresh data from Ollama registry');
     // Use the community API that provides access to the full model registry
     let response;
     try {
-      // Fetch all models with pagination - get 200 models to ensure we get everything
-      response = await fetch('https://ollamadb.dev/api/v1/models?limit=200', {
+      // Fetch all models without limit
+      response = await fetch('https://ollamadb.dev/api/v1/models', {
         headers: {
           Accept: 'application/json',
           'User-Agent': 'Morpheus-Client/1.0',
@@ -376,133 +449,75 @@ export const getAvailableModelsFromRegistry = async (forceRefresh = false) => {
       logger.info(`Total models available: ${data.total_count}`);
     }
 
+    // Debug: Log the structure of the first model if it exists
+    if (data.models && data.models.length > 0) {
+      logger.info('First model structure:', JSON.stringify(data.models[0], null, 2));
+    }
+
+    // Debug: Log the first few models to see their structure
+    if (data.models && data.models.length > 0) {
+      logger.info('First 3 models from API:');
+      data.models.slice(0, 3).forEach((model: any, index: number) => {
+        logger.info(`Model ${index + 1}: ${JSON.stringify(model)}`);
+      });
+    }
+
     // Transform the data to match our expected format
     // The community API returns {models: [...]} format
     const models = data.models
-      ? data.models.map((model: any) => {
-          // Generate tags based on model name, description, and URL
-          const generateTags = (modelName: string, description: string, url?: string) => {
-            const tags: string[] = [];
-
-            // Extract model family from name
-            if (modelName.includes('llama')) tags.push('llama');
-            if (modelName.includes('mistral')) tags.push('mistral');
-            if (modelName.includes('gemma')) tags.push('gemma');
-            if (modelName.includes('qwen')) tags.push('qwen');
-            if (modelName.includes('phi')) tags.push('phi');
-            if (modelName.includes('deepseek')) tags.push('deepseek');
-            if (modelName.includes('nomic')) tags.push('nomic');
-            if (modelName.includes('llava')) tags.push('llava');
-            if (modelName.includes('orca')) tags.push('orca');
-            if (modelName.includes('neural')) tags.push('neural');
-            if (modelName.includes('code')) tags.push('code');
-            if (modelName.includes('codellama')) tags.push('code');
-
-            // Extract size indicators
-            if (modelName.includes('3b') || modelName.includes('3B')) tags.push('3b');
-            if (modelName.includes('7b') || modelName.includes('7B')) tags.push('7b');
-            if (modelName.includes('13b') || modelName.includes('13B')) tags.push('13b');
-            if (modelName.includes('70b') || modelName.includes('70B')) tags.push('70b');
-
-            // Extract capabilities from description and URL
-            const descriptionLower = description.toLowerCase();
-            const urlLower = url?.toLowerCase() || '';
-
-            if (
-              descriptionLower.includes('code') ||
-              modelName.includes('code') ||
-              urlLower.includes('code')
-            )
-              tags.push('programming');
-            if (descriptionLower.includes('chat') || urlLower.includes('chat')) tags.push('chat');
-            if (
-              descriptionLower.includes('vision') ||
-              modelName.includes('llava') ||
-              urlLower.includes('vision')
-            )
-              tags.push('vision');
-            if (descriptionLower.includes('embed') || urlLower.includes('embed'))
-              tags.push('embedding');
-            if (descriptionLower.includes('text') || urlLower.includes('text')) tags.push('text');
-            if (descriptionLower.includes('instruct') || urlLower.includes('instruct'))
-              tags.push('instruct');
-
-            // Add general tags
-            tags.push('ai');
-            tags.push('llm');
-
-            return [...new Set(tags)]; // Remove duplicates
-          };
+      ? data.models.map((model: any, index: number) => {
+          const modelName = model.name || model.model_name || model.model_identifier || 'unknown';
 
           return {
-            name: model.model_name || model.model_identifier,
+            name: modelName,
             description: model.description || '',
-            size: model.size || 4.1 * 1024 * 1024 * 1024, // Default to 4.1GB if not specified
+            size: model.size || estimateModelSize(modelName), // Use intelligent size estimation
             modifiedAt: model.last_updated || '2024-01-01T00:00:00Z',
             digest: model.digest || 'sha256:1234567890abcdef',
-            tags: generateTags(
-              model.model_name || model.model_identifier,
-              model.description || '',
-              model.url,
-            ),
+            tags: model.tags || ['ai', 'llm'], // Use API tags or fallback to basic tags
             url: model.url || '',
             isInstalled: false, // Will be computed by comparing with local models
           };
         })
       : [];
 
-    logger.info(`Transformed ${models.length} models from API`);
-    if (models.length > 0) {
-      logger.info(`First model: ${models[0].name}`);
-    }
-
-    // If we get very few models from the API (less than 10), supplement with curated list
-    if (models.length < 10) {
-      logger.info(`API returned only ${models.length} models, supplementing with curated list`);
-
-      // Get existing model names to avoid duplicates
-      const existingNames = new Set(models.map((m: any) => m.name));
-
-      // Add curated models that aren't already in the list
-      const curatedModels = POPULAR_MODELS.filter((model) => !existingNames.has(model.name));
-
-      // Combine API models with curated models
-      const combinedModels = [...models, ...curatedModels];
-
-      // Update cache with combined list
-      registryCache = {
-        data: combinedModels,
-        timestamp: Date.now(),
-      };
-
-      // Save to persistent storage
-      saveCacheToStorage(combinedModels);
-
+    // Get locally installed models for comparison
+    let localModels: string[] = [];
+    try {
+      const localModelsResponse = await ollama.list();
+      localModels = localModelsResponse.models.map((m: any) => m.name);
       logger.info(
-        `Combined ${models.length} API models with ${curatedModels.length} curated models (total: ${combinedModels.length})`,
+        `Found ${localModels.length} locally installed models: ${localModels.join(', ')}`,
       );
-      return combinedModels;
+    } catch (err) {
+      logger.error('Failed to get local models for comparison:', err);
     }
 
-    // Update cache
-    registryCache = {
-      data: models,
-      timestamp: Date.now(),
-    };
+    // Update the isInstalled flag for each model
+    const updatedModels = models.map((model: any) => ({
+      ...model,
+      isInstalled: localModels.includes(model.name),
+    }));
+
+    // Disable caching for now
+    // registryCache = {
+    //   data: updatedModels,
+    //   timestamp: Date.now(),
+    // };
 
     // Save to persistent storage
-    saveCacheToStorage(models);
+    // saveCacheToStorage(updatedModels);
 
-    logger.info(`Fetched ${models.length} models from registry and cached`);
-    return models;
+    logger.info(`Fetched ${updatedModels.length} models from registry and cached`);
+    return updatedModels;
   } catch (err) {
     logger.error('Failed to fetch models from registry:', err);
 
-    // Return cached data if available (even if expired) as fallback
-    if (registryCache) {
-      logger.info('Returning stale cached data as fallback');
-      return registryCache.data;
-    }
+    // Disable fallback caching for now
+    // if (registryCache) {
+    //   logger.info('Returning stale cached data as fallback');
+    //   return registryCache.data;
+    // }
 
     // If no cache and API fails, return curated list as final fallback
     logger.info('API failed and no cache available, returning curated model list');
@@ -513,7 +528,13 @@ export const getAvailableModelsFromRegistry = async (forceRefresh = false) => {
 // Function to clear cache (useful for testing or manual refresh)
 export const clearRegistryCache = () => {
   registryCache = null;
-  logger.info('Registry cache cleared');
+  // Clear persistent storage by overwriting with empty data
+  try {
+    saveCacheToStorage([]);
+    logger.info('Registry cache and persistent storage cleared');
+  } catch (err) {
+    logger.info('Registry cache cleared (persistent storage clear failed)');
+  }
 };
 
 // Function to get cache status
@@ -542,7 +563,7 @@ const POPULAR_MODELS = [
     size: 3.8 * 1024 * 1024 * 1024, // ~3.8GB
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', 'chat'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -551,7 +572,7 @@ const POPULAR_MODELS = [
     size: 3.8 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', '7b'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -560,7 +581,7 @@ const POPULAR_MODELS = [
     size: 7.3 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', '13b'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -569,7 +590,7 @@ const POPULAR_MODELS = [
     size: 39 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', '70b'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -578,7 +599,7 @@ const POPULAR_MODELS = [
     size: 3.8 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['code', 'llama', 'programming'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -587,7 +608,7 @@ const POPULAR_MODELS = [
     size: 3.8 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['code', 'llama', '7b', 'programming'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -596,7 +617,7 @@ const POPULAR_MODELS = [
     size: 4.1 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['mistral', '7b'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -605,7 +626,7 @@ const POPULAR_MODELS = [
     size: 4.1 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['mistral', '7b'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -614,7 +635,7 @@ const POPULAR_MODELS = [
     size: 1.9 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['orca', 'microsoft', '3b'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -623,7 +644,7 @@ const POPULAR_MODELS = [
     size: 1.9 * 1024 * 1024 * 1024,
     modifiedAt: '2024-01-01T00:00:00Z',
     digest: 'sha256:1234567890abcdef',
-    tags: ['orca', 'microsoft', '3b'],
+    tags: ['ai', 'llm'],
     isInstalled: false,
   },
   {
@@ -818,27 +839,58 @@ export const deleteModel = async (modelName: string) => {
 // Function to pull and replace current model
 export const pullAndReplaceModel = async (newModelName: string) => {
   try {
-    // Get current model
-    const currentModel = await getCurrentModel();
-
-    // Pull the new model first
-    await sendOllamaStatusToRenderer(`Pulling new model: ${newModelName}`);
+    // First, pull the new model
     await installModelWithStatus(newModelName);
 
-    // If there was a current model, delete it to save space
-    if (currentModel) {
-      await sendOllamaStatusToRenderer(`Deleting old model: ${currentModel.name} to save space`);
-      await deleteModel(currentModel.name);
+    // Then replace the current model
+    const success = await window.backendBridge.ollama.pullAndReplaceModel(newModelName);
+    return success;
+  } catch (error) {
+    logger.error('Failed to pull and replace model:', error);
+    return false;
+  }
+};
+
+export const getModelDetails = async (modelName: string) => {
+  try {
+    const url = `https://ollama.com/library/${modelName}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch model details: ${response.status}`);
     }
 
-    // Initialize the new model
-    await sendOllamaStatusToRenderer(`Initializing new model: ${newModelName}`);
-    await ollama.chat({ model: newModelName });
+    const html = await response.text();
 
-    logger.info(`Successfully replaced model: ${currentModel?.name || 'none'} -> ${newModelName}`);
-    return true;
-  } catch (err) {
-    logger.error(`Failed to pull and replace model ${newModelName}:`, err);
-    return false;
+    // Extract description from the HTML
+    const descriptionMatch = html.match(/<p>([^<]+)<\/p>/);
+    const description = descriptionMatch ? descriptionMatch[1] : '';
+
+    // Extract parameter information from the URL or page content
+    const parameterMatch = modelName.match(/(\d+b)/i);
+    const parameters = parameterMatch ? parameterMatch[1] : '';
+
+    // Extract features from the HTML
+    const featuresMatch = html.match(/<li>([^<]+)<\/li>/g);
+    const features = featuresMatch
+      ? featuresMatch.map((match) => match.replace(/<\/?li>/g, ''))
+      : [];
+
+    return {
+      name: modelName,
+      description,
+      parameters,
+      features,
+      url,
+    };
+  } catch (error) {
+    logger.error(`Failed to fetch details for ${modelName}:`, error);
+    return {
+      name: modelName,
+      description: 'Failed to load model details',
+      parameters: '',
+      features: [],
+      url: `https://ollama.com/library/${modelName}`,
+    };
   }
 };

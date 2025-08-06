@@ -24,6 +24,7 @@ export enum OllamaChannel {
   OllamaGetLastUsedLocalModel = 'ollama:get-last-used-local-model',
   OllamaDeleteModel = 'ollama:delete-model',
   OllamaPullAndReplaceModel = 'ollama:pull-and-replace-model',
+  OllamaGetModelDetails = 'ollama:get-model-details',
 }
 
 export enum InferenceChannel {

@@ -15,6 +15,7 @@ import {
   getCurrentModel,
   deleteModel,
   pullAndReplaceModel,
+  getModelDetails,
 } from './services/ollama';
 import { getInferenceManager } from './services/inference-manager';
 import { OllamaQuestion, InferenceMode, MorpheusAPIConfig } from './types';
@@ -193,10 +194,27 @@ export const deleteModelHandler = async (_: any, modelName: string) => {
 
 export const pullAndReplaceModelHandler = async (_: any, modelName: string) => {
   try {
-    return await pullAndReplaceModel(modelName);
-  } catch (error) {
-    logger.error('Error pulling and replacing model:', error);
-    throw error;
+    const success = await pullAndReplaceModel(modelName);
+    return success;
+  } catch (err) {
+    handleError(err);
+    return false;
+  }
+};
+
+export const getModelDetailsHandler = async (_: any, modelName: string) => {
+  try {
+    const details = await getModelDetails(modelName);
+    return details;
+  } catch (err) {
+    handleError(err);
+    return {
+      name: modelName,
+      description: 'Failed to load model details',
+      parameters: '',
+      features: [],
+      url: `https://ollama.com/library/${modelName}`,
+    };
   }
 };
 

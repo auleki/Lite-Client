@@ -69,6 +69,7 @@ export interface BackendBridge {
     getLastUsedLocalModel: () => Promise<string>;
     deleteModel: (modelName: string) => Promise<boolean>;
     pullAndReplaceModel: (modelName: string) => Promise<boolean>;
+    getModelDetails: (modelName: string) => Promise<any>;
   };
   inference: {
     getMode: () => Promise<InferenceMode>;

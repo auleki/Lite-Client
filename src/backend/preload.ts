@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('backendBridge', {
       ipcRenderer.invoke(OllamaChannel.OllamaDeleteModel, modelName),
     pullAndReplaceModel: (modelName: string) =>
       ipcRenderer.invoke(OllamaChannel.OllamaPullAndReplaceModel, modelName),
+    getModelDetails: (modelName: string) =>
+      ipcRenderer.invoke(OllamaChannel.OllamaGetModelDetails, modelName),
   },
   inference: {
     getMode: () => ipcRenderer.invoke(InferenceChannel.GetInferenceMode) as Promise<InferenceMode>,
