@@ -53,11 +53,6 @@ const ModelsView: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isSearching, setIsSearching] = useState(false);
 
-  // Manual pagination for search
-  const [currentSearchPage, setCurrentSearchPage] = useState(1);
-  const [totalSearchPages, setTotalSearchPages] = useState(0);
-  const [totalSearchResults, setTotalSearchResults] = useState(0);
-
   // Model info modal state
   const [showModelInfoModal, setShowModelInfoModal] = useState(false);
   const [selectedModelInfo, setSelectedModelInfo] = useState<{
@@ -83,10 +78,8 @@ const ModelsView: React.FC = () => {
         const localResponse = await window.backendBridge.ollama.getAllModels();
         setLocalModels(localResponse.models || []);
 
-        // Load community models (no pagination when not searching)
+        // Load community models (always 500 limit, no pagination)
         const communityResponse = await window.backendBridge.ollama.getAvailableModelsFromRegistry(
-          0, // skip
-          500, // limit
           searchQuery || undefined,
           sortBy,
           sortOrder,
@@ -182,40 +175,27 @@ const ModelsView: React.FC = () => {
     setSelectedModelInfo(null);
   };
 
-  // Manual search with pagination
-  const performSearch = async (query: string, page: number = 1) => {
+  // Simplified search - no pagination, get all results
+  const performSearch = async (query: string) => {
     setIsSearching(true);
-    const offset = (page - 1) * 20;
 
     try {
-      console.log(`🔍 DEBUG: Search page ${page}, offset ${offset}, query: '${query}'`);
+      console.log(`🔍 DEBUG: Search query: '${query}'`);
       const response = await window.backendBridge.ollama.getAvailableModelsFromRegistry(
-        offset,
-        20,
         query || undefined,
         sortBy,
         sortOrder,
       );
 
-      if (page === 1) {
-        // First page - replace results
-        setCommunityModels(response || []);
-      } else {
-        // Subsequent pages - accumulate results
-        setCommunityModels((prev) => [...prev, ...(response || [])]);
-      }
-      setCurrentSearchPage(page);
+      setCommunityModels(response || []);
 
-      // Calculate total pages (estimate based on typical API behavior)
-      if (response && response.length === 20) {
-        // If we got full page, assume more pages exist
-        setTotalSearchPages(Math.max(page + 1, totalSearchPages));
-      } else if (response && response.length < 20) {
-        // If partial page, this is the last page
-        setTotalSearchPages(page);
+      // Extract total count if available
+      if (response && (response as any).total_count) {
+        const total = (response as any).total_count;
+        setTotalModels(total);
       }
 
-      console.log(`🔍 DEBUG: Search complete - page ${page}, got ${response?.length || 0} results`);
+      console.log(`🔍 DEBUG: Search complete - got ${response?.length || 0} results`);
     } catch (error) {
       console.error('Search failed:', error);
     } finally {
@@ -227,13 +207,9 @@ const ModelsView: React.FC = () => {
   const debouncedSearch = useCallback(
     debounce(async (query: string) => {
       if (query.trim()) {
-        setCurrentSearchPage(1);
-        setTotalSearchPages(0);
-        await performSearch(query, 1);
+        await performSearch(query);
       } else {
         // No search - reload with fixed parameters
-        setCurrentSearchPage(1);
-        setTotalSearchPages(0);
         await loadTabData();
       }
     }, 300),
@@ -252,7 +228,7 @@ const ModelsView: React.FC = () => {
     setSortBy(newSortBy as 'downloads' | 'name' | 'updated_at' | 'last_updated');
     if (searchQuery.trim()) {
       // Re-search with new sort
-      await performSearch(searchQuery, 1);
+      await performSearch(searchQuery);
     } else {
       // Reload data (no sort controls when not searching, so this won't be called)
       await loadTabData();
@@ -265,7 +241,7 @@ const ModelsView: React.FC = () => {
     setSortOrder(newOrder);
     if (searchQuery.trim()) {
       // Re-search with new sort order
-      await performSearch(searchQuery, 1);
+      await performSearch(searchQuery);
     } else {
       // Reload data (no sort controls when not searching, so this won't be called)
       await loadTabData();
@@ -276,13 +252,6 @@ const ModelsView: React.FC = () => {
   const handleClearSearch = () => {
     setSearchQuery('');
     debouncedSearch('');
-  };
-
-  // Handle manual page navigation for search
-  const handleSearchPageChange = async (newPage: number) => {
-    if (searchQuery.trim() && newPage >= 1) {
-      await performSearch(searchQuery, newPage);
-    }
   };
 
   return (
@@ -319,10 +288,6 @@ const ModelsView: React.FC = () => {
                 onSortOrderToggle={handleSortOrderToggle}
                 isSearching={isSearching}
                 totalModels={totalModels}
-                // Search pagination props
-                currentSearchPage={currentSearchPage}
-                totalSearchPages={totalSearchPages}
-                onSearchPageChange={handleSearchPageChange}
                 onModelInfo={handleModelInfo}
                 onLocalModelInfo={handleLocalModelInfo}
                 loadingModelInfo={loadingModelInfo}
@@ -423,10 +388,6 @@ const LocalTabContent: React.FC<{
   onSortOrderToggle: () => void;
   isSearching: boolean;
   totalModels: number;
-  // Search pagination props
-  currentSearchPage: number;
-  totalSearchPages: number;
-  onSearchPageChange: (page: number) => void;
   onModelInfo: (modelUrl: string, modelName: string) => void;
   onLocalModelInfo: (modelName: string) => void;
   loadingModelInfo: boolean;
@@ -444,10 +405,6 @@ const LocalTabContent: React.FC<{
   onSortOrderToggle,
   isSearching,
   totalModels,
-  // Search pagination props
-  currentSearchPage,
-  totalSearchPages,
-  onSearchPageChange,
   onModelInfo,
   onLocalModelInfo,
   loadingModelInfo,
@@ -524,7 +481,6 @@ const LocalTabContent: React.FC<{
               {isSearching
                 ? 'Searching...'
                 : `Found ${communityModels.length} models for "${searchQuery}"`}
-              {currentSearchPage > 1 && !isSearching && ` (Page ${currentSearchPage})`}
             </SearchResultsInfo>
           )}
         </SearchContainer>
@@ -558,45 +514,6 @@ const LocalTabContent: React.FC<{
             <EmptyMessage>No models available</EmptyMessage>
           )}
         </ModelList>
-
-        {/* Manual Pagination for Search Results */}
-        {searchQuery.trim() && totalSearchPages > 1 && (
-          <PaginationContainer>
-            <PaginationButton
-              onClick={() => onSearchPageChange(currentSearchPage - 1)}
-              disabled={currentSearchPage <= 1}
-            >
-              Previous
-            </PaginationButton>
-
-            <PaginationInfo>
-              Page {currentSearchPage} of {totalSearchPages}
-            </PaginationInfo>
-
-            <PaginationNumbers>
-              {Array.from({ length: Math.min(5, totalSearchPages) }, (_, i) => {
-                const pageNum = Math.max(1, currentSearchPage - 2) + i;
-                if (pageNum > totalSearchPages) return null;
-                return (
-                  <PaginationNumber
-                    key={pageNum}
-                    active={pageNum === currentSearchPage}
-                    onClick={() => onSearchPageChange(pageNum)}
-                  >
-                    {pageNum}
-                  </PaginationNumber>
-                );
-              }).filter(Boolean)}
-            </PaginationNumbers>
-
-            <PaginationButton
-              onClick={() => onSearchPageChange(currentSearchPage + 1)}
-              disabled={currentSearchPage >= totalSearchPages}
-            >
-              Next
-            </PaginationButton>
-          </PaginationContainer>
-        )}
       </Section>
     </LocalContainer>
   );

@@ -287,19 +287,17 @@ export const stopOllama = async () => {
 
 // Fetch models from Ollama registry - always fresh data, no caching
 export const getAvailableModelsFromRegistry = async (
-  skip = 0,
-  limit = 20,
   searchQuery?: string,
   sortBy?: 'name' | 'downloads' | 'pulls' | 'updated_at' | 'last_updated' | 'created_at',
   sortOrder?: 'asc' | 'desc',
 ) => {
-  // Build URL with parameters
+  // Build URL with parameters - always use limit=500, skip=0
   const params = new URLSearchParams();
+  params.append('limit', '500');
+  params.append('skip', '0');
 
   if (searchQuery && searchQuery.trim()) {
-    // Search mode: use provided parameters
-    params.append('limit', limit.toString());
-    params.append('skip', skip.toString());
+    // Search mode: add search term and optional sort
     params.append('search', searchQuery.trim());
     if (sortBy) {
       params.append('sort_by', sortBy);
@@ -308,11 +306,9 @@ export const getAvailableModelsFromRegistry = async (
       params.append('order', sortOrder);
     }
   } else {
-    // No search: use fixed parameters
+    // No search: use fixed sort by popularity
     params.append('sort_by', 'pulls');
     params.append('order', 'desc');
-    params.append('limit', '500');
-    params.append('skip', '0');
   }
 
   const url = `https://ollamadb.dev/api/v1/models?${params}`;
