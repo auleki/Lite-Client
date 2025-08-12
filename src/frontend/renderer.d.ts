@@ -58,7 +58,13 @@ export interface BackendBridge {
     onAnswer: (callback: (response: ChatResponse) => void) => void;
     getAllModels: () => Promise<ListResponse>;
     getModel: (model: string) => Promise<ModelResponse>;
-    getAvailableModelsFromRegistry: () => Promise<RegistryModel[]>;
+    getAvailableModelsFromRegistry: (
+      offset?: number,
+      limit?: number,
+      searchQuery?: string,
+      sortBy?: 'name' | 'downloads' | 'pulls' | 'updated_at' | 'last_updated' | 'created_at',
+      sortOrder?: 'asc' | 'desc',
+    ) => Promise<RegistryModel[]>;
     checkDiskSpaceForModel: (modelSize: number) => Promise<DiskSpaceForModel>;
     getDiskSpaceInfo: () => Promise<DiskSpaceInfo>;
     getCurrentModel: () => Promise<any>;

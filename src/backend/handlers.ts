@@ -89,14 +89,23 @@ export const setModelFolderPath = async (_: Electron.IpcMainEvent) => {
   return true;
 };
 
-// New handler for registry models with scroll loading support
+// New handler for registry models with scroll loading and search/sort support
 export const getAvailableModelsFromRegistryHandler = async (
   _: Electron.IpcMainEvent,
   offset = 0,
   limit = 20,
+  searchQuery?: string,
+  sortBy?: string,
+  sortOrder?: string,
 ) => {
   try {
-    const models = await getAvailableModelsFromRegistry(offset, limit);
+    const models = await getAvailableModelsFromRegistry(
+      offset,
+      limit,
+      searchQuery,
+      sortBy,
+      sortOrder,
+    );
     return models;
   } catch (err) {
     handleError(err);
