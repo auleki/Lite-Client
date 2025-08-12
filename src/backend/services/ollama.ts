@@ -287,39 +287,37 @@ export const stopOllama = async () => {
 
 // Fetch models from Ollama registry - always fresh data, no caching
 export const getAvailableModelsFromRegistry = async (
-  offset = 0,
+  skip = 0,
   limit = 20,
   searchQuery?: string,
   sortBy?: 'name' | 'downloads' | 'pulls' | 'updated_at' | 'last_updated' | 'created_at',
   sortOrder?: 'asc' | 'desc',
 ) => {
-  logger.info(
-    `Fetching fresh data from Ollama registry (offset: ${offset}, limit: ${limit}, search: ${searchQuery || 'none'}, sort: ${sortBy || 'default'}, order: ${sortOrder || 'default'})`,
-  );
-
-  // Build URL with confirmed working parameters
-  const params = new URLSearchParams({
-    limit: limit.toString(),
-    offset: offset.toString(),
-  });
+  // Build URL with parameters
+  const params = new URLSearchParams();
 
   if (searchQuery && searchQuery.trim()) {
+    // Search mode: use provided parameters
+    params.append('limit', limit.toString());
+    params.append('skip', skip.toString());
     params.append('search', searchQuery.trim());
-  }
-  if (sortBy) {
-    params.append('sort_by', sortBy);
-  }
-  if (sortOrder) {
-    params.append('order', sortOrder);
+    if (sortBy) {
+      params.append('sort_by', sortBy);
+    }
+    if (sortOrder) {
+      params.append('order', sortOrder);
+    }
+  } else {
+    // No search: use fixed parameters
+    params.append('sort_by', 'pulls');
+    params.append('order', 'desc');
+    params.append('limit', '500');
+    params.append('skip', '0');
   }
 
   const url = `https://ollamadb.dev/api/v1/models?${params}`;
-  logger.info(
-    `🔍 DEBUG: API Call - offset:${offset}, limit:${limit}, search:'${searchQuery || 'none'}', sortBy:'${sortBy || 'none'}', sortOrder:'${sortOrder || 'none'}'`,
-  );
-  logger.info(`API URL: ${url}`);
 
-  // Use the community API with search and sort support
+  // Fetch from community API
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
@@ -327,37 +325,18 @@ export const getAvailableModelsFromRegistry = async (
     },
   });
 
-  logger.info(`Community API response status: ${response.status}`);
-
   if (!response.ok) {
     throw new Error(`Community API request failed: ${response.status} ${response.statusText}`);
   }
 
   const data = await response.json();
-  logger.info(`API response received: ${JSON.stringify(data).substring(0, 200)}...`);
-  logger.info(`API response structure: models array length = ${data.models?.length || 0}`);
-  if (data.total_count) {
-    logger.info(`Total models available: ${data.total_count}`);
-  }
 
-  // Debug: Log the structure of the first model if it exists
-  if (data.models && data.models.length > 0) {
-    logger.info('First model structure:', JSON.stringify(data.models[0], null, 2));
-  }
-
-  // Transform the data to match our expected format
+  // Transform the data to match our expected format - pure API passthrough
   // The community API returns {models: [...]} format
   const models = data.models
     ? data.models.map((model: any, index: number) => {
         // Use model_name first (from ollamadb.dev), then fallback to name, then index-based fallback
         const modelName = model.model_name || model.name || `unknown-${index}`;
-
-        // Debug log for first few models to check name extraction
-        if (index < 5) {
-          logger.info(
-            `🔍 DEBUG Model ${index}: raw.model_name='${model.model_name}', raw.name='${model.name}', final='${modelName}'`,
-          );
-        }
 
         return {
           name: modelName,
@@ -366,44 +345,12 @@ export const getAvailableModelsFromRegistry = async (
           digest: model.digest || 'sha256:1234567890abcdef',
           tags: model.tags || ['ai', 'llm'],
           url: model.url || '',
-          isInstalled: false, // Will be computed by comparing with local models
+          isInstalled: false, // Default - no processing
         };
       })
     : [];
 
-  // Get locally installed models for comparison
-  let localModels: string[] = [];
-  try {
-    const localModelsResponse = await ollama.list();
-    localModels = localModelsResponse.models.map((m: any) => m.name);
-    logger.info(`Found ${localModels.length} locally installed models: ${localModels.join(', ')}`);
-  } catch (err) {
-    logger.error('Failed to get local models for comparison:', err);
-  }
-
-  // Update the isInstalled flag for each model
-  const updatedModels = models.map((model: any) => ({
-    ...model,
-    isInstalled: localModels.includes(model.name),
-  }));
-
-  // Check for duplicates in the final models array
-  const modelNames = updatedModels.map((m: any) => m.name);
-  const uniqueNames = new Set(modelNames);
-  if (modelNames.length !== uniqueNames.size) {
-    logger.warn(
-      `🚨 DEBUG: Found ${modelNames.length - uniqueNames.size} duplicate model names in final array!`,
-    );
-    const duplicates = modelNames.filter(
-      (name: string, index: number) => modelNames.indexOf(name) !== index,
-    );
-    logger.warn(`🚨 DEBUG: Duplicate names: ${duplicates.slice(0, 10).join(', ')}`);
-  }
-
-  logger.info(
-    `Fetched ${updatedModels.length} models from registry (${uniqueNames.size} unique names)`,
-  );
-  return updatedModels;
+  return models;
 };
 
 // No cache functions needed - models are always fetched fresh

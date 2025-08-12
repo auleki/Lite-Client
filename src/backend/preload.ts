@@ -61,10 +61,22 @@ contextBridge.exposeInMainWorld('backendBridge', {
       ipcRenderer.invoke(OllamaChannel.OllamaDeleteModel, modelName),
     pullAndReplaceModel: (modelName: string) =>
       ipcRenderer.invoke(OllamaChannel.OllamaPullAndReplaceModel, modelName),
-    getModelDetails: (modelName: string) =>
-      ipcRenderer.invoke(OllamaChannel.OllamaGetModelDetails, modelName),
+
     getModelInfo: (modelUrl: string, modelName: string) =>
-      ipcRenderer.invoke(OllamaChannel.OllamaOpenModelInfoModal, modelUrl, modelName) as Promise<{
+      ipcRenderer.invoke(OllamaChannel.OllamaGetModelInfo, modelUrl, modelName) as Promise<{
+        success: boolean;
+        data?: {
+          name: string;
+          description: string;
+          tags: string[];
+          examples: string[];
+          parameters: Record<string, string>;
+          url: string;
+        };
+        error?: string;
+      }>,
+    getLocalModelInfo: (modelName: string) =>
+      ipcRenderer.invoke(OllamaChannel.OllamaGetLocalModelInfo, modelName) as Promise<{
         success: boolean;
         data?: {
           name: string;

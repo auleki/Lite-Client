@@ -42,10 +42,8 @@ const ModelsView: React.FC = () => {
   const [remoteModels, setRemoteModels] = useState<RemoteModel[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Scroll loading state
-  const [communityOffset, setCommunityOffset] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMoreModels, setHasMoreModels] = useState(true);
+  // Model count state (for display only)
+  const [totalModels, setTotalModels] = useState(0);
 
   // Search and sort state
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,17 +83,21 @@ const ModelsView: React.FC = () => {
         const localResponse = await window.backendBridge.ollama.getAllModels();
         setLocalModels(localResponse.models || []);
 
-        // Load initial community models (reset scroll loading)
-        setCommunityOffset(0);
-        setHasMoreModels(true);
+        // Load community models (no pagination when not searching)
         const communityResponse = await window.backendBridge.ollama.getAvailableModelsFromRegistry(
-          0,
-          20,
+          0, // skip
+          500, // limit
           searchQuery || undefined,
           sortBy,
           sortOrder,
         );
         setCommunityModels(communityResponse || []);
+
+        // Extract total count if available
+        if (communityResponse && (communityResponse as any).total_count) {
+          const total = (communityResponse as any).total_count;
+          setTotalModels(total);
+        }
       } else {
         // Load remote models
         const remoteResponse = await window.backendBridge.morpheus.getModels();
@@ -105,56 +107,6 @@ const ModelsView: React.FC = () => {
       console.error('Failed to load models:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadMoreCommunityModels = async () => {
-    if (loadingMore || !hasMoreModels) return;
-
-    setLoadingMore(true);
-    try {
-      const nextOffset = communityOffset + 20;
-      console.log(
-        `🔍 DEBUG: Loading more - current offset: ${communityOffset}, next offset: ${nextOffset}`,
-      );
-      console.log(
-        `🔍 DEBUG: Search params - query: '${searchQuery}', sortBy: '${sortBy}', sortOrder: '${sortOrder}'`,
-      );
-      const moreModels = await window.backendBridge.ollama.getAvailableModelsFromRegistry(
-        nextOffset,
-        20,
-        searchQuery || undefined,
-        sortBy,
-        sortOrder,
-      );
-
-      if (moreModels && moreModels.length > 0) {
-        console.log(
-          `🔍 DEBUG: Adding ${moreModels.length} more models. Current count: ${communityModels.length}`,
-        );
-        console.log(
-          `🔍 DEBUG: New model names:`,
-          moreModels.slice(0, 5).map((m) => m.name),
-        );
-        setCommunityModels((prev) => {
-          const newArray = [...prev, ...moreModels];
-          console.log(`🔍 DEBUG: Total after append: ${newArray.length}`);
-          return newArray;
-        });
-        setCommunityOffset(nextOffset);
-        console.log(`🔍 DEBUG: Updated offset from ${communityOffset} to ${nextOffset}`);
-
-        // Check if we've reached the end (less than 20 models returned)
-        if (moreModels.length < 20) {
-          setHasMoreModels(false);
-        }
-      } else {
-        setHasMoreModels(false);
-      }
-    } catch (error) {
-      console.error('Failed to load more models:', error);
-    } finally {
-      setLoadingMore(false);
     }
   };
 
@@ -206,47 +158,28 @@ const ModelsView: React.FC = () => {
     }
   };
 
+  const handleLocalModelInfo = async (modelName: string) => {
+    setLoadingModelInfo(true);
+    try {
+      const response = await window.backendBridge.ollama.getLocalModelInfo(modelName);
+      if (response.success && response.data) {
+        setSelectedModelInfo(response.data);
+        setShowModelInfoModal(true);
+      } else {
+        console.error('Failed to get local model info:', response.error);
+        alert('Failed to load model information. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to get local model info:', error);
+      alert('Failed to load model information. Please try again.');
+    } finally {
+      setLoadingModelInfo(false);
+    }
+  };
+
   const closeModelInfoModal = () => {
     setShowModelInfoModal(false);
     setSelectedModelInfo(null);
-  };
-
-  // Search and sort handlers
-  const refreshWithCurrentFilters = async (offset = 0) => {
-    setLoading(true);
-    setCommunityOffset(offset);
-
-    try {
-      const response = await window.backendBridge.ollama.getAvailableModelsFromRegistry(
-        offset,
-        20,
-        searchQuery || undefined,
-        sortBy,
-        sortOrder,
-      );
-      if (offset === 0) {
-        console.log(`🔍 DEBUG: Setting fresh community models: ${(response || []).length}`);
-        console.log(
-          `🔍 DEBUG: First 5 model names:`,
-          (response || []).slice(0, 5).map((m) => m.name),
-        );
-        setCommunityModels(response || []);
-        setHasMoreModels(true);
-      } else {
-        console.log(
-          `🔍 DEBUG: Adding ${(response || []).length} models to existing ${communityModels.length}`,
-        );
-        setCommunityModels((prev) => {
-          const newArray = [...prev, ...(response || [])];
-          console.log(`🔍 DEBUG: Total after refresh append: ${newArray.length}`);
-          return newArray;
-        });
-      }
-    } catch (error) {
-      console.error('Failed to refresh:', error);
-    } finally {
-      setLoading(false);
-    }
   };
 
   // Manual search with pagination
@@ -298,12 +231,10 @@ const ModelsView: React.FC = () => {
         setTotalSearchPages(0);
         await performSearch(query, 1);
       } else {
-        // No search - return to infinite scroll mode
-        setCommunityOffset(0);
-        setHasMoreModels(true);
+        // No search - reload with fixed parameters
         setCurrentSearchPage(1);
         setTotalSearchPages(0);
-        await refreshWithCurrentFilters(0);
+        await loadTabData();
       }
     }, 300),
     [sortBy, sortOrder],
@@ -323,7 +254,8 @@ const ModelsView: React.FC = () => {
       // Re-search with new sort
       await performSearch(searchQuery, 1);
     } else {
-      await refreshWithCurrentFilters(0);
+      // Reload data (no sort controls when not searching, so this won't be called)
+      await loadTabData();
     }
   };
 
@@ -335,7 +267,8 @@ const ModelsView: React.FC = () => {
       // Re-search with new sort order
       await performSearch(searchQuery, 1);
     } else {
-      await refreshWithCurrentFilters(0);
+      // Reload data (no sort controls when not searching, so this won't be called)
+      await loadTabData();
     }
   };
 
@@ -377,9 +310,6 @@ const ModelsView: React.FC = () => {
                 communityModels={communityModels}
                 onDownload={handleDownload}
                 onDelete={handleDelete}
-                onLoadMore={loadMoreCommunityModels}
-                loadingMore={loadingMore}
-                hasMoreModels={hasMoreModels}
                 searchQuery={searchQuery}
                 onSearchChange={handleSearchChange}
                 onClearSearch={handleClearSearch}
@@ -388,11 +318,13 @@ const ModelsView: React.FC = () => {
                 onSortChange={handleSortChange}
                 onSortOrderToggle={handleSortOrderToggle}
                 isSearching={isSearching}
-                // Manual pagination props
+                totalModels={totalModels}
+                // Search pagination props
                 currentSearchPage={currentSearchPage}
                 totalSearchPages={totalSearchPages}
                 onSearchPageChange={handleSearchPageChange}
                 onModelInfo={handleModelInfo}
+                onLocalModelInfo={handleLocalModelInfo}
                 loadingModelInfo={loadingModelInfo}
               />
             ) : (
@@ -457,12 +389,14 @@ const ModelsView: React.FC = () => {
             </ModalBody>
 
             <ModalFooter>
-              <ActionButton
-                variant="info"
-                onClick={() => window.open(selectedModelInfo.url, '_blank')}
-              >
-                View on Ollama
-              </ActionButton>
+              {selectedModelInfo.url && (
+                <ActionButton
+                  variant="info"
+                  onClick={() => window.open(selectedModelInfo.url, '_blank')}
+                >
+                  View on Ollama
+                </ActionButton>
+              )}
               <ActionButton variant="download" onClick={closeModelInfoModal}>
                 Close
               </ActionButton>
@@ -480,9 +414,6 @@ const LocalTabContent: React.FC<{
   communityModels: CommunityModel[];
   onDownload: (modelName: string) => void;
   onDelete: (modelName: string) => void;
-  onLoadMore: () => void;
-  loadingMore: boolean;
-  hasMoreModels: boolean;
   searchQuery: string;
   onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClearSearch: () => void;
@@ -491,20 +422,19 @@ const LocalTabContent: React.FC<{
   onSortChange: (sortBy: string) => void;
   onSortOrderToggle: () => void;
   isSearching: boolean;
-  // Manual pagination props
+  totalModels: number;
+  // Search pagination props
   currentSearchPage: number;
   totalSearchPages: number;
   onSearchPageChange: (page: number) => void;
   onModelInfo: (modelUrl: string, modelName: string) => void;
+  onLocalModelInfo: (modelName: string) => void;
   loadingModelInfo: boolean;
 }> = ({
   localModels,
   communityModels,
   onDownload,
   onDelete,
-  onLoadMore,
-  loadingMore,
-  hasMoreModels,
   searchQuery,
   onSearchChange,
   onClearSearch,
@@ -513,26 +443,15 @@ const LocalTabContent: React.FC<{
   onSortChange,
   onSortOrderToggle,
   isSearching,
-  // Manual pagination props
+  totalModels,
+  // Search pagination props
   currentSearchPage,
   totalSearchPages,
   onSearchPageChange,
   onModelInfo,
+  onLocalModelInfo,
   loadingModelInfo,
 }) => {
-  // Scroll detection for community models list (only when not searching)
-  const handleCommunityScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    // Only enable scroll loading when not in search mode
-    if (searchQuery.trim()) return;
-
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    const threshold = 0.8; // Load more when 80% scrolled
-
-    if (scrollTop + clientHeight >= scrollHeight * threshold && hasMoreModels && !loadingMore) {
-      onLoadMore();
-    }
-  };
-
   return (
     <LocalContainer>
       <Section>
@@ -544,9 +463,18 @@ const LocalTabContent: React.FC<{
                 <ModelName>{model.name}</ModelName>
                 <ModelMeta>Size: {(model.size / (1024 * 1024 * 1024)).toFixed(1)}GB</ModelMeta>
               </ModelInfo>
-              <ActionButton variant="delete" onClick={() => onDelete(model.name)}>
-                Delete
-              </ActionButton>
+              <ModelActions>
+                <ActionButton
+                  variant="info"
+                  onClick={() => onLocalModelInfo(model.name)}
+                  disabled={loadingModelInfo}
+                >
+                  {loadingModelInfo ? 'Loading...' : 'Info'}
+                </ActionButton>
+                <ActionButton variant="delete" onClick={() => onDelete(model.name)}>
+                  Delete
+                </ActionButton>
+              </ModelActions>
             </ModelItem>
           ))}
           {localModels.length === 0 && <EmptyMessage>No models downloaded</EmptyMessage>}
@@ -554,9 +482,9 @@ const LocalTabContent: React.FC<{
       </Section>
 
       <Section>
-        <SectionTitle>Available Models</SectionTitle>
+        <SectionTitle>Available Models{totalModels > 0 && ` (${totalModels} total)`}</SectionTitle>
 
-        {/* Search and Sort Controls */}
+        {/* Search Controls (Sort controls only shown when searching) */}
         <SearchContainer>
           <SearchAndSortRow>
             <SearchInput>
@@ -569,18 +497,25 @@ const LocalTabContent: React.FC<{
               {searchQuery && <ClearButton onClick={onClearSearch}>✕</ClearButton>}
             </SearchInput>
 
-            <SortControls>
-              <SortLabel>Sort by:</SortLabel>
-              <SortSelect value={sortBy} onChange={(e) => onSortChange(e.target.value)}>
-                <option value="downloads">Most Popular</option>
-                <option value="name">Name</option>
-                <option value="updated_at">Recently Updated</option>
-                <option value="last_updated">Last Updated</option>
-              </SortSelect>
-              <SortOrderButton onClick={onSortOrderToggle}>
-                {sortOrder === 'asc' ? '↑ A-Z' : '↓ Z-A'}
-              </SortOrderButton>
-            </SortControls>
+            {searchQuery.trim() && (
+              <SortControls>
+                <SortLabel>Sort by:</SortLabel>
+                <SortSelect
+                  value={sortBy}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                    onSortChange(e.target.value)
+                  }
+                >
+                  <option value="downloads">Most Popular</option>
+                  <option value="name">Name</option>
+                  <option value="updated_at">Recently Updated</option>
+                  <option value="last_updated">Last Updated</option>
+                </SortSelect>
+                <SortOrderButton onClick={onSortOrderToggle}>
+                  {sortOrder === 'asc' ? '↑ A-Z' : '↓ Z-A'}
+                </SortOrderButton>
+              </SortControls>
+            )}
           </SearchAndSortRow>
 
           {/* Search Results Info */}
@@ -594,7 +529,7 @@ const LocalTabContent: React.FC<{
           )}
         </SearchContainer>
 
-        <ModelList onScroll={handleCommunityScroll}>
+        <ModelList>
           {communityModels.map((model) => (
             <ModelItem key={model.name}>
               <ModelInfo>
@@ -604,7 +539,7 @@ const LocalTabContent: React.FC<{
               <ModelActions>
                 <ActionButton
                   variant="info"
-                  onClick={() => onModelInfo(model.url, model.name)}
+                  onClick={() => onModelInfo(model.url || '', model.name)}
                   disabled={loadingModelInfo}
                 >
                   {loadingModelInfo ? 'Loading...' : 'Info'}
@@ -616,16 +551,10 @@ const LocalTabContent: React.FC<{
             </ModelItem>
           ))}
           {isSearching && <LoadingMessage>Searching...</LoadingMessage>}
-          {!searchQuery.trim() && loadingMore && (
-            <LoadingMessage>Loading more models...</LoadingMessage>
-          )}
-          {!searchQuery.trim() && !hasMoreModels && communityModels.length > 0 && (
-            <EmptyMessage>All {communityModels.length} models loaded</EmptyMessage>
-          )}
           {searchQuery && communityModels.length === 0 && !isSearching && (
             <EmptyMessage>No models found for "{searchQuery}"</EmptyMessage>
           )}
-          {!searchQuery && communityModels.length === 0 && !isSearching && !loadingMore && (
+          {!searchQuery && communityModels.length === 0 && !isSearching && (
             <EmptyMessage>No models available</EmptyMessage>
           )}
         </ModelList>

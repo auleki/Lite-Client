@@ -13,7 +13,6 @@ import {
   getCurrentModel,
   deleteModel,
   pullAndReplaceModel,
-  getModelDetails,
 } from './services/ollama';
 import { getInferenceManager } from './services/inference-manager';
 import { OllamaQuestion, InferenceMode, MorpheusAPIConfig } from './types';
@@ -103,8 +102,15 @@ export const getAvailableModelsFromRegistryHandler = async (
       offset,
       limit,
       searchQuery,
-      sortBy,
-      sortOrder,
+      sortBy as
+        | 'name'
+        | 'downloads'
+        | 'pulls'
+        | 'updated_at'
+        | 'last_updated'
+        | 'created_at'
+        | undefined,
+      sortOrder as 'asc' | 'desc' | undefined,
     );
     return models;
   } catch (err) {
@@ -177,22 +183,6 @@ export const pullAndReplaceModelHandler = async (_: any, modelName: string) => {
   } catch (err) {
     handleError(err);
     return false;
-  }
-};
-
-export const getModelDetailsHandler = async (_: any, modelName: string) => {
-  try {
-    const details = await getModelDetails(modelName);
-    return details;
-  } catch (err) {
-    handleError(err);
-    return {
-      name: modelName,
-      description: 'Failed to load model details',
-      parameters: '',
-      features: [],
-      url: `https://ollama.com/library/${modelName}`,
-    };
   }
 };
 
@@ -462,6 +452,19 @@ export const getModelInfoHandler = async (
     const { scrapeModelInfo } = await import('./services/ollama');
     const modelInfo = await scrapeModelInfo(modelUrl, modelName);
     return { success: true, data: modelInfo };
+  } catch (error) {
+    handleError(error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Get local model info using ollama show command
+export const getLocalModelInfoHandler = async (_: Electron.IpcMainEvent, modelName: string) => {
+  try {
+    const { getLocalModelDetails } = await import('./services/ollama');
+    const ollamaResponse = await getLocalModelDetails(modelName);
+
+    return { success: true, data: ollamaResponse };
   } catch (error) {
     handleError(error);
     return { success: false, error: error.message };
