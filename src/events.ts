@@ -14,9 +14,6 @@ export enum OllamaChannel {
   OllamaAnswer = 'ollama:answer',
   OllamaGetModel = 'ollama:getmodel',
   OllamaGetAvailableModelsFromRegistry = 'ollama:getavailablemodelsfromregistry',
-  OllamaForceRefreshRegistry = 'ollama:forcerefreshregistry',
-  OllamaClearRegistryCache = 'ollama:clearregistrycache',
-  OllamaGetRegistryCacheStatus = 'ollama:getregistrycachestatus',
   OllamaCheckDiskSpaceForModel = 'ollama:check-disk-space-for-model',
   OllamaGetDiskSpaceInfo = 'ollama:get-disk-space-info',
   OllamaGetCurrentModel = 'ollama:get-current-model',
@@ -24,8 +21,9 @@ export enum OllamaChannel {
   OllamaGetLastUsedLocalModel = 'ollama:get-last-used-local-model',
   OllamaDeleteModel = 'ollama:delete-model',
   OllamaPullAndReplaceModel = 'ollama:pull-and-replace-model',
-  OllamaGetModelDetails = 'ollama:get-model-details',
-  OllamaOpenModelInfoModal = 'ollama:open-model-info-modal',
+
+  OllamaGetModelInfo = 'ollama:get-model-info',
+  OllamaGetLocalModelInfo = 'ollama:get-local-model-info',
 }
 
 export enum InferenceChannel {

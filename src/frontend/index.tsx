@@ -98,7 +98,7 @@ const AppRoot = () => {
 };
 
 root.render(
-  <HashRouter>
+  <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
     <GlobalStyle />
     <AppRoot />
   </HashRouter>,
