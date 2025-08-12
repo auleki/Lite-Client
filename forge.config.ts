@@ -109,8 +109,8 @@ const config: ForgeConfig = {
   publishers: [
     new PublisherGithub({
       repository: {
-        owner: 'MorpheusAIs',
-        name: 'Node',
+        owner: 'MORpheus-Software',
+        name: 'Lite-Client',
       },
       draft: true,
     }),
