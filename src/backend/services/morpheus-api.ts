@@ -7,9 +7,9 @@ const MORPHEUS_API_BASE_URL = 'https://api.mor.org/api/v1';
 // Types
 export interface MorpheusModel {
   id: string;
-  object: string;
+  blockchainID: string;
   created: number;
-  owned_by: string;
+  tags: string[];
 }
 
 export interface MorpheusModelsResponse {

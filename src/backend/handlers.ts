@@ -258,7 +258,15 @@ export const testMorpheusConnectionHandler = async (_: Electron.IpcMainEvent) =>
 export const getMorpheusModelsHandler = async (_: Electron.IpcMainEvent) => {
   try {
     const manager = getInferenceManager();
-    return await manager.getRemoteModels();
+    const morpheusModels = await manager.getRemoteModels();
+
+    // Map MorpheusModel to RemoteModel format expected by frontend
+    return morpheusModels.map((model) => ({
+      id: model.id,
+      blockchainID: model.blockchainID,
+      tags: model.tags,
+      isFavorite: false,
+    }));
   } catch (err) {
     handleError(err);
     return [];

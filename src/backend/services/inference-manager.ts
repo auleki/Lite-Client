@@ -185,7 +185,7 @@ class InferenceManager {
           id: model.id,
           name: model.id,
           source: 'remote' as const,
-          description: `Remote Morpheus model (${model.owned_by})`,
+          description: model.tags.join(', '),
         }));
         models.push(...remoteModelList);
       } catch (error) {

@@ -16,8 +16,8 @@ type CommunityModel = RegistryModel;
 
 interface RemoteModel {
   id: string;
-  name: string;
-  description: string;
+  blockchainID: string;
+  tags: string[];
   isFavorite?: boolean;
 }
 
@@ -32,6 +32,28 @@ const debounce = (func: Function, wait: number) => {
     clearTimeout(timeout);
     timeout = setTimeout(later, wait);
   };
+};
+
+// Favorite storage functions
+const getFavorites = (): string[] => {
+  const stored = localStorage.getItem('morpheus-favorites');
+  return stored ? JSON.parse(stored) : [];
+};
+
+const saveFavorites = (blockchainIDs: string[]): void => {
+  localStorage.setItem('morpheus-favorites', JSON.stringify(blockchainIDs));
+};
+
+const toggleFavorite = (blockchainID: string): boolean => {
+  const favorites = getFavorites();
+  const index = favorites.indexOf(blockchainID);
+  if (index === -1) {
+    favorites.push(blockchainID);
+  } else {
+    favorites.splice(index, 1);
+  }
+  saveFavorites(favorites);
+  return index === -1; // return new favorite status
 };
 
 const ModelsView: React.FC = () => {
@@ -94,7 +116,15 @@ const ModelsView: React.FC = () => {
       } else {
         // Load remote models
         const remoteResponse = await window.backendBridge.morpheus.getModels();
-        setRemoteModels(remoteResponse || []);
+        const favorites = getFavorites();
+
+        // Set favorite status based on stored favorites
+        const modelsWithFavorites = (remoteResponse || []).map((model) => ({
+          ...model,
+          isFavorite: favorites.includes(model.blockchainID),
+        }));
+
+        setRemoteModels(modelsWithFavorites);
       }
     } catch (error) {
       console.error('Failed to load models:', error);
@@ -128,8 +158,15 @@ const ModelsView: React.FC = () => {
   };
 
   const handleToggleFavorite = (modelId: string) => {
-    // TODO: Implement favorites in local storage
-    console.log('Toggle favorite for:', modelId);
+    const model = remoteModels.find((m) => m.id === modelId);
+    if (!model) return;
+
+    const newFavoriteStatus = toggleFavorite(model.blockchainID);
+
+    // Update the model state
+    setRemoteModels((prevModels) =>
+      prevModels.map((m) => (m.id === modelId ? { ...m, isFavorite: newFavoriteStatus } : m)),
+    );
   };
 
   const handleModelInfo = async (modelUrl: string, modelName: string) => {
@@ -530,8 +567,8 @@ const RemoteTabContent: React.FC<{
       {remoteModels.map((model) => (
         <ModelItem key={model.id}>
           <ModelInfo>
-            <ModelName>{model.name}</ModelName>
-            <ModelMeta>{model.description}</ModelMeta>
+            <ModelName>{model.id}</ModelName>
+            <ModelMeta>{model.tags.join(', ')}</ModelMeta>
           </ModelInfo>
           <ActionButton
             variant={model.isFavorite ? 'favorited' : 'favorite'}
