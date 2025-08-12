@@ -607,9 +607,9 @@ const RemoteTabContent: React.FC<{
 
 // Styled Components
 const Container = styled.div`
-  padding: 20px;
-  background: ${(props) => props.theme.colors.background};
-  color: ${(props) => props.theme.colors.core};
+  padding: 30px;
+  background: ${(props) => props.theme.colors.core};
+  color: ${(props) => props.theme.colors.notice};
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -653,7 +653,7 @@ const Tab = styled.button.withConfig({
 `;
 
 const Content = styled.div`
-  background: ${(props) => props.theme.colors.balance};
+  background: transparent;
   border-radius: 12px;
   padding: 20px;
   flex: 1;
@@ -671,7 +671,10 @@ const LocalContainer = styled.div`
 `;
 
 const Section = styled.div`
-  margin-bottom: 20px;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: ${(props) => props.theme.colors.hunter};
+  border-radius: 15px;
   flex-shrink: 0;
 `;
 
@@ -695,9 +698,9 @@ const ModelItem = styled.div`
   justify-content: space-between;
   align-items: center;
   padding: 15px;
-  background: ${(props) => props.theme.colors.background};
+  background: rgba(2, 44, 51, 0.3);
   border-radius: 8px;
-  border: 1px solid ${(props) => props.theme.colors.border};
+  border: 1px solid rgba(253, 179, 102, 0.2);
 `;
 
 const ModelInfo = styled.div`
@@ -705,7 +708,7 @@ const ModelInfo = styled.div`
 `;
 
 const ModelName = styled.div`
-  color: ${(props) => props.theme.colors.core};
+  color: ${(props) => props.theme.colors.notice};
   font-weight: 500;
   margin-bottom: 4px;
 `;
@@ -741,7 +744,7 @@ const TableHeaderCell = styled.div`
   padding: 10px 15px;
   color: ${(props) => props.theme.colors.emerald};
   font-weight: 600;
-  border-bottom: 2px solid ${(props) => props.theme.colors.border};
+  border-bottom: 2px solid rgba(23, 156, 101, 0.3);
 `;
 
 const TableBody = styled.div`
@@ -751,20 +754,20 @@ const TableBody = styled.div`
 const TableRow = styled.div`
   display: table-row;
   &:hover {
-    background: ${(props) => props.theme.colors.balance};
+    background: rgba(23, 156, 101, 0.1);
   }
 `;
 
 const TableCell = styled.div`
   display: table-cell;
   padding: 15px;
-  border-bottom: 1px solid ${(props) => props.theme.colors.border};
+  border-bottom: 1px solid rgba(253, 179, 102, 0.2);
   vertical-align: middle;
 `;
 
 const ModelNameCell = styled(TableCell)`
   font-weight: 700;
-  color: ${(props) => props.theme.colors.core};
+  color: ${(props) => props.theme.colors.notice};
 `;
 
 const TagsCell = styled(TableCell)`
@@ -790,10 +793,10 @@ const ActionButton = styled.button.withConfig({
     switch (props.variant) {
       case 'info':
         return `
-          background: transparent;
-          color: ${props.theme.colors.core};
-          border: 1px solid ${props.theme.colors.border};
-          &:hover { background: ${props.theme.colors.balance}; }
+          background: ${props.theme.colors.hunter};
+          color: ${props.theme.colors.notice};
+          border: 1px solid ${props.theme.colors.emerald};
+          &:hover { background: rgba(23, 156, 101, 0.8); }
         `;
       case 'download':
         return `
@@ -870,10 +873,10 @@ const SearchInput = styled.div`
 const SearchField = styled.input`
   flex: 1;
   padding: 12px 40px 12px 15px;
-  border: 1px solid ${(props) => props.theme.colors.border};
+  border: 1px solid rgba(253, 179, 102, 0.3);
   border-radius: 8px;
-  background: ${(props) => props.theme.colors.background};
-  color: ${(props) => props.theme.colors.core};
+  background: rgba(2, 44, 51, 0.5);
+  color: ${(props) => props.theme.colors.notice};
   font-size: 14px;
 
   &:focus {
@@ -882,7 +885,7 @@ const SearchField = styled.input`
   }
 
   &::placeholder {
-    color: ${(props) => props.theme.colors.textSecondary};
+    color: rgba(253, 179, 102, 0.6);
   }
 `;
 
@@ -1135,8 +1138,8 @@ const ParameterValue = styled.span`
 `;
 
 const CodeExample = styled.pre`
-  background: ${(props) => props.theme.colors.balance};
-  border: 1px solid ${(props) => props.theme.colors.border};
+  background: rgba(2, 44, 51, 0.3);
+  border: 1px solid rgba(253, 179, 102, 0.2);
   border-radius: 6px;
   padding: 12px;
   margin: 8px 0;
