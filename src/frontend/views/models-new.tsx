@@ -563,23 +563,35 @@ const RemoteTabContent: React.FC<{
 }> = ({ remoteModels, onToggleFavorite }) => (
   <Section>
     <SectionTitle>Morpheus API Models</SectionTitle>
-    <ModelList>
-      {remoteModels.map((model) => (
-        <ModelItem key={model.id}>
-          <ModelInfo>
-            <ModelName>{model.id}</ModelName>
-            <ModelMeta>{model.tags.join(', ')}</ModelMeta>
-          </ModelInfo>
-          <ActionButton
-            variant={model.isFavorite ? 'favorited' : 'favorite'}
-            onClick={() => onToggleFavorite(model.id)}
-          >
-            {model.isFavorite ? 'Unfavorite' : 'Favorite'}
-          </ActionButton>
-        </ModelItem>
-      ))}
-      {remoteModels.length === 0 && <EmptyMessage>No remote models available</EmptyMessage>}
-    </ModelList>
+    {remoteModels.length === 0 ? (
+      <EmptyMessage>No remote models available</EmptyMessage>
+    ) : (
+      <ModelTable>
+        <TableHeader>
+          <TableHeaderRow>
+            <TableHeaderCell>Model Name</TableHeaderCell>
+            <TableHeaderCell>Tags</TableHeaderCell>
+            <TableHeaderCell>Action</TableHeaderCell>
+          </TableHeaderRow>
+        </TableHeader>
+        <TableBody>
+          {remoteModels.map((model) => (
+            <TableRow key={model.id}>
+              <ModelNameCell>{model.id}</ModelNameCell>
+              <TagsCell>{model.tags.join(', ')}</TagsCell>
+              <ActionCell>
+                <ActionButton
+                  variant={model.isFavorite ? 'favorited' : 'favorite'}
+                  onClick={() => onToggleFavorite(model.id)}
+                >
+                  {model.isFavorite ? 'Unfavorite' : 'Favorite'}
+                </ActionButton>
+              </ActionCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </ModelTable>
+    )}
   </Section>
 );
 
@@ -697,6 +709,61 @@ const ModelActions = styled.div`
   display: flex;
   gap: 8px;
   align-items: center;
+`;
+
+// Table-style components for Remote Models
+const ModelTable = styled.div`
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+`;
+
+const TableHeader = styled.div`
+  display: table-header-group;
+`;
+
+const TableHeaderRow = styled.div`
+  display: table-row;
+`;
+
+const TableHeaderCell = styled.div`
+  display: table-cell;
+  padding: 10px 15px;
+  color: ${(props) => props.theme.colors.emerald};
+  font-weight: 600;
+  border-bottom: 2px solid ${(props) => props.theme.colors.border};
+`;
+
+const TableBody = styled.div`
+  display: table-row-group;
+`;
+
+const TableRow = styled.div`
+  display: table-row;
+  &:hover {
+    background: ${(props) => props.theme.colors.balance};
+  }
+`;
+
+const TableCell = styled.div`
+  display: table-cell;
+  padding: 15px;
+  border-bottom: 1px solid ${(props) => props.theme.colors.border};
+  vertical-align: middle;
+`;
+
+const ModelNameCell = styled(TableCell)`
+  font-weight: 700;
+  color: ${(props) => props.theme.colors.core};
+`;
+
+const TagsCell = styled(TableCell)`
+  color: ${(props) => props.theme.colors.textSecondary};
+`;
+
+const ActionCell = styled(TableCell)`
+  text-align: right;
+  width: 120px;
 `;
 
 const ActionButton = styled.button.withConfig({
