@@ -99,8 +99,6 @@ export const getAvailableModelsFromRegistryHandler = async (
 ) => {
   try {
     const models = await getAvailableModelsFromRegistry(
-      offset,
-      limit,
       searchQuery,
       sortBy as
         | 'name'
