@@ -60,13 +60,10 @@ const SettingsView = (): React.JSX.Element => {
   };
 
   const handleClearCache = async () => {
-    try {
-      await window.backendBridge.ollama.clearRegistryCache();
-      alert('Cache cleared successfully!');
-    } catch (error) {
-      console.error('Failed to clear cache:', error);
-      alert('Failed to clear cache. Please try again.');
-    }
+    // Cache functionality has been removed - models are always fetched fresh
+    alert(
+      'Cache functionality has been removed. Models are now always fetched fresh from the registry.',
+    );
   };
 
   // Morpheus API handlers

@@ -34,11 +34,13 @@ contextBridge.exposeInMainWorld('backendBridge', {
     getAllModels: () => invokeNoParam<ListResponse>(OllamaChannel.OllamaGetAllModels),
     getModel: (model: string) =>
       invoke<string[], ModelResponse>(OllamaChannel.OllamaGetModel, model),
-    getAvailableModelsFromRegistry: () =>
-      invokeNoParam<any[]>(OllamaChannel.OllamaGetAvailableModelsFromRegistry),
-    forceRefreshRegistry: () => invokeNoParam<any[]>(OllamaChannel.OllamaForceRefreshRegistry),
-    clearRegistryCache: () => invokeNoParam<boolean>(OllamaChannel.OllamaClearRegistryCache),
-    getRegistryCacheStatus: () => invokeNoParam<any>(OllamaChannel.OllamaGetRegistryCacheStatus),
+    getAvailableModelsFromRegistry: (offset = 0, limit = 20) =>
+      ipcRenderer.invoke(
+        OllamaChannel.OllamaGetAvailableModelsFromRegistry,
+        offset,
+        limit,
+      ) as Promise<any[]>,
+    // Cache-related functions removed - models are always fetched fresh
     checkDiskSpaceForModel: (modelSize: number) =>
       ipcRenderer.invoke(OllamaChannel.OllamaCheckDiskSpaceForModel, modelSize),
     getDiskSpaceInfo: () => ipcRenderer.invoke(OllamaChannel.OllamaGetDiskSpaceInfo),

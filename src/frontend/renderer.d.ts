@@ -59,9 +59,6 @@ export interface BackendBridge {
     getAllModels: () => Promise<ListResponse>;
     getModel: (model: string) => Promise<ModelResponse>;
     getAvailableModelsFromRegistry: () => Promise<RegistryModel[]>;
-    forceRefreshRegistry: () => Promise<RegistryModel[]>;
-    clearRegistryCache: () => Promise<boolean>;
-    getRegistryCacheStatus: () => Promise<CacheStatus>;
     checkDiskSpaceForModel: (modelSize: number) => Promise<DiskSpaceForModel>;
     getDiskSpaceInfo: () => Promise<DiskSpaceInfo>;
     getCurrentModel: () => Promise<any>;
@@ -108,21 +105,12 @@ export interface BackendBridge {
 export interface RegistryModel {
   name: string;
   description: string;
-  size: number;
   modifiedAt: string;
   digest: string;
   tags: string[];
   url?: string;
   isInstalled: boolean;
   isDefault?: boolean;
-}
-
-// New type for cache status
-export interface CacheStatus {
-  hasCache: boolean;
-  age: number | null;
-  isExpired: boolean;
-  cacheDuration?: number;
 }
 
 // Chat types (importing from frontend types)

@@ -10,7 +10,6 @@ interface RegistryModelsProps {
 interface RegistryModel {
   name: string;
   description: string;
-  size: number;
   modifiedAt: string;
   digest: string;
   tags: string[];
@@ -28,6 +27,7 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState<RegistryModel | null>(null);
+  const [isDebugMode, setIsDebugMode] = useState(false);
   // Removed filtering and sorting state
 
   useEffect(() => {
@@ -117,52 +117,97 @@ const RegistryModels: React.FC<RegistryModelsProps> = ({
       </Header>
 
       <Controls>
-        <div>No filtering - showing raw data</div>
-
-        <div>Raw API Data</div>
+        <DebugToggle>
+          <ToggleButton onClick={() => setIsDebugMode(!isDebugMode)} $active={isDebugMode}>
+            {isDebugMode ? 'Switch to Normal View' : 'Switch to Debug View'}
+          </ToggleButton>
+        </DebugToggle>
+        {isDebugMode && (
+          <>
+            <div>No filtering - showing raw data</div>
+            <div>Raw API Data</div>
+          </>
+        )}
       </Controls>
 
-      <TableContainer>
-        <Table>
-          <TableHeader>
-            <HeaderCell>Name</HeaderCell>
-            <HeaderCell>Raw Tags</HeaderCell>
-            <HeaderCell>Raw Data</HeaderCell>
-            <HeaderCell>Action</HeaderCell>
-          </TableHeader>
+      {isDebugMode ? (
+        <TableContainer>
+          <Table>
+            <TableHeader>
+              <HeaderCell>Name</HeaderCell>
+              <HeaderCell>Raw Tags</HeaderCell>
+              <HeaderCell>Raw Data</HeaderCell>
+              <HeaderCell>Action</HeaderCell>
+            </TableHeader>
 
-          <TableBody>
-            {rawModels.map((model: any, index: number) => (
-              <TableRow key={`${model.name}-${index}`}>
-                <TableCell>
-                  <ModelName>{model.name}</ModelName>
-                </TableCell>
-                <TableCell>
-                  <Tags>{JSON.stringify(model.tags)}</Tags>
-                </TableCell>
-                <TableCell>
-                  <div>{JSON.stringify(model)}</div>
-                </TableCell>
-                <TableCell>
-                  <ActionButton
-                    onClick={() => handleModelPull(model.name)}
-                    disabled={isPulling === model.name && isPulling !== null}
-                    isCurrent={!!(currentModel && currentModel.name === model.name)}
-                  >
-                    {currentModel && currentModel.name === model.name
-                      ? 'In Use'
-                      : model.isInstalled
-                        ? 'Load'
-                        : isPulling === model.name
-                          ? 'Pulling...'
-                          : 'Pull'}
-                  </ActionButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            <TableBody>
+              {rawModels.map((model: any, index: number) => (
+                <TableRow key={`${model.name}-${index}`}>
+                  <TableCell>
+                    <ModelName>{model.name}</ModelName>
+                  </TableCell>
+                  <TableCell>
+                    <Tags>{JSON.stringify(model.tags)}</Tags>
+                  </TableCell>
+                  <TableCell>
+                    <div>{JSON.stringify(model)}</div>
+                  </TableCell>
+                  <TableCell>
+                    <ActionButton
+                      onClick={() => handleModelPull(model.name)}
+                      disabled={isPulling === model.name && isPulling !== null}
+                      isCurrent={!!(currentModel && currentModel.name === model.name)}
+                    >
+                      {currentModel && currentModel.name === model.name
+                        ? 'In Use'
+                        : model.isInstalled
+                          ? 'Load'
+                          : isPulling === model.name
+                            ? 'Pulling...'
+                            : 'Pull'}
+                    </ActionButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      ) : (
+        <NormalTableContainer>
+          <NormalTable>
+            <NormalTableHeader>
+              <tr>
+                <NormalHeaderCell>Model Name</NormalHeaderCell>
+                <NormalHeaderCell>Action</NormalHeaderCell>
+              </tr>
+            </NormalTableHeader>
+            <NormalTableBody>
+              {models.map((model) => (
+                <NormalTableRow key={model.name}>
+                  <NormalTableCell>
+                    <ModelName>{model.name}</ModelName>
+                  </NormalTableCell>
+                  <NormalTableCell>
+                    <ActionButton
+                      onClick={() => handleModelPull(model.name)}
+                      disabled={isPulling === model.name}
+                      isCurrent={!!(currentModel && currentModel.name === model.name)}
+                    >
+                      {currentModel && currentModel.name === model.name
+                        ? 'In Use'
+                        : model.isInstalled
+                          ? 'Load'
+                          : isPulling === model.name
+                            ? 'Pulling...'
+                            : 'Pull'}
+                    </ActionButton>
+                  </NormalTableCell>
+                </NormalTableRow>
+              ))}
+            </NormalTableBody>
+          </NormalTable>
+        </NormalTableContainer>
+      )}
     </Container>
   );
 };
@@ -367,6 +412,82 @@ const RetryButton = styled.button`
   &:hover {
     background: #0056b3;
   }
+`;
+
+const DebugToggle = styled.div`
+  margin-right: 16px;
+`;
+
+const ToggleButton = styled.button<{ $active: boolean }>`
+  padding: 8px 16px;
+  background: ${(props) => (props.$active ? '#28a745' : '#f8f9fa')};
+  color: ${(props) => (props.$active ? 'white' : '#333')};
+  border: 1px solid ${(props) => (props.$active ? '#28a745' : '#ddd')};
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: ${(props) => (props.$active ? '#218838' : '#e9ecef')};
+    border-color: ${(props) => (props.$active ? '#1e7e34' : '#adb5bd')};
+  }
+`;
+
+// Normal view table components
+const NormalTableContainer = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+`;
+
+const NormalTable = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+`;
+
+const NormalTableHeader = styled.thead`
+  background: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+`;
+
+const NormalHeaderCell = styled.th`
+  padding: 16px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 14px;
+  color: #495057;
+  border-bottom: 1px solid #dee2e6;
+`;
+
+const NormalTableBody = styled.tbody``;
+
+const NormalTableRow = styled.tr`
+  &:hover {
+    background: #f8f9fa;
+  }
+
+  &:not(:last-child) {
+    border-bottom: 1px solid #e9ecef;
+  }
+`;
+
+const NormalTableCell = styled.td`
+  padding: 12px;
+  font-size: 14px;
+  vertical-align: middle;
+`;
+
+const ModelDescription = styled.div`
+  font-size: 13px;
+  color: #666;
+  line-height: 1.4;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `;
 
 export default RegistryModels;

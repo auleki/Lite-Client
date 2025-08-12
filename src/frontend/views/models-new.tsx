@@ -1,21 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import styled, { useTheme } from 'styled-components';
 
-// Types for our models
+// Import types from the backend bridge
+import { RegistryModel } from '../renderer.d';
+
+// Types for our models - use the actual backend response types
 interface LocalModel {
   name: string;
   size: number;
-  modified_at: string;
+  modified_at: Date; // This comes from ollama as Date, not string
 }
 
-interface CommunityModel {
-  model_identifier: string;
-  model_name: string;
-  description: string;
-  pulls: number;
-  tags: number;
-  url: string;
-}
+// Use RegistryModel directly for community models since that's what backend returns
+type CommunityModel = RegistryModel;
 
 interface RemoteModel {
   id: string;
@@ -32,6 +29,11 @@ const ModelsView: React.FC = () => {
   const [remoteModels, setRemoteModels] = useState<RemoteModel[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Scroll loading state
+  const [communityOffset, setCommunityOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreModels, setHasMoreModels] = useState(true);
+
   // Load data when tab changes
   useEffect(() => {
     loadTabData();
@@ -45,9 +47,13 @@ const ModelsView: React.FC = () => {
         const localResponse = await window.backendBridge.ollama.getAllModels();
         setLocalModels(localResponse.models || []);
 
-        // Load community models
-        const communityResponse =
-          await window.backendBridge.ollama.getAvailableModelsFromRegistry();
+        // Load initial community models (reset scroll loading)
+        setCommunityOffset(0);
+        setHasMoreModels(true);
+        const communityResponse = await window.backendBridge.ollama.getAvailableModelsFromRegistry(
+          0,
+          20,
+        );
         setCommunityModels(communityResponse || []);
       } else {
         // Load remote models
@@ -58,6 +64,35 @@ const ModelsView: React.FC = () => {
       console.error('Failed to load models:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMoreCommunityModels = async () => {
+    if (loadingMore || !hasMoreModels) return;
+
+    setLoadingMore(true);
+    try {
+      const nextOffset = communityOffset + 20;
+      const moreModels = await window.backendBridge.ollama.getAvailableModelsFromRegistry(
+        nextOffset,
+        20,
+      );
+
+      if (moreModels && moreModels.length > 0) {
+        setCommunityModels((prev) => [...prev, ...moreModels]);
+        setCommunityOffset(nextOffset);
+
+        // Check if we've reached the end (less than 20 models returned)
+        if (moreModels.length < 20) {
+          setHasMoreModels(false);
+        }
+      } else {
+        setHasMoreModels(false);
+      }
+    } catch (error) {
+      console.error('Failed to load more models:', error);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -91,22 +126,22 @@ const ModelsView: React.FC = () => {
   };
 
   return (
-    <Container theme={theme}>
-      <Header theme={theme}>
-        <Title theme={theme}>Models</Title>
-        <TabContainer theme={theme}>
-          <Tab theme={theme} active={activeTab === 'local'} onClick={() => setActiveTab('local')}>
+    <Container>
+      <Header>
+        <Title>Models</Title>
+        <TabContainer>
+          <Tab active={activeTab === 'local'} onClick={() => setActiveTab('local')}>
             Local Mode
           </Tab>
-          <Tab theme={theme} active={activeTab === 'remote'} onClick={() => setActiveTab('remote')}>
+          <Tab active={activeTab === 'remote'} onClick={() => setActiveTab('remote')}>
             Remote Mode
           </Tab>
         </TabContainer>
       </Header>
 
-      <Content theme={theme}>
+      <Content>
         {loading ? (
-          <LoadingMessage theme={theme}>Loading models...</LoadingMessage>
+          <LoadingMessage>Loading models...</LoadingMessage>
         ) : (
           <>
             {activeTab === 'local' ? (
@@ -115,13 +150,14 @@ const ModelsView: React.FC = () => {
                 communityModels={communityModels}
                 onDownload={handleDownload}
                 onDelete={handleDelete}
-                theme={theme}
+                onLoadMore={loadMoreCommunityModels}
+                loadingMore={loadingMore}
+                hasMoreModels={hasMoreModels}
               />
             ) : (
               <RemoteTabContent
                 remoteModels={remoteModels}
                 onToggleFavorite={handleToggleFavorite}
-                theme={theme}
               />
             )}
           </>
@@ -137,74 +173,90 @@ const LocalTabContent: React.FC<{
   communityModels: CommunityModel[];
   onDownload: (modelName: string) => void;
   onDelete: (modelName: string) => void;
-  theme: any;
-}> = ({ localModels, communityModels, onDownload, onDelete, theme }) => (
-  <LocalContainer theme={theme}>
-    <Section theme={theme}>
-      <SectionTitle theme={theme}>Downloaded Models</SectionTitle>
-      <ModelList theme={theme}>
-        {localModels.map((model) => (
-          <ModelItem key={model.name} theme={theme}>
-            <ModelInfo theme={theme}>
-              <ModelName theme={theme}>{model.name}</ModelName>
-              <ModelMeta theme={theme}>
-                Size: {(model.size / (1024 * 1024 * 1024)).toFixed(1)}GB
-              </ModelMeta>
-            </ModelInfo>
-            <ActionButton theme={theme} variant="delete" onClick={() => onDelete(model.name)}>
-              Delete
-            </ActionButton>
-          </ModelItem>
-        ))}
-        {localModels.length === 0 && (
-          <EmptyMessage theme={theme}>No models downloaded</EmptyMessage>
-        )}
-      </ModelList>
-    </Section>
+  onLoadMore: () => void;
+  loadingMore: boolean;
+  hasMoreModels: boolean;
+}> = ({
+  localModels,
+  communityModels,
+  onDownload,
+  onDelete,
+  onLoadMore,
+  loadingMore,
+  hasMoreModels,
+}) => {
+  // Scroll detection for community models list
+  const handleCommunityScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    const threshold = 0.8; // Load more when 80% scrolled
 
-    <Section theme={theme}>
-      <SectionTitle theme={theme}>Available Models</SectionTitle>
-      <ModelList theme={theme}>
-        {communityModels.map((model) => (
-          <ModelItem key={model.model_identifier} theme={theme}>
-            <ModelInfo theme={theme}>
-              <ModelName theme={theme}>{model.model_name}</ModelName>
-              <ModelMeta theme={theme}>{model.pulls?.toLocaleString()} downloads</ModelMeta>
-            </ModelInfo>
-            <ActionButton
-              theme={theme}
-              variant="download"
-              onClick={() => onDownload(model.model_identifier)}
-            >
-              Download
-            </ActionButton>
-          </ModelItem>
-        ))}
-        {communityModels.length === 0 && (
-          <EmptyMessage theme={theme}>No models available</EmptyMessage>
-        )}
-      </ModelList>
-    </Section>
-  </LocalContainer>
-);
+    if (scrollTop + clientHeight >= scrollHeight * threshold && hasMoreModels && !loadingMore) {
+      onLoadMore();
+    }
+  };
+
+  return (
+    <LocalContainer>
+      <Section>
+        <SectionTitle>Downloaded Models</SectionTitle>
+        <ModelList>
+          {localModels.map((model) => (
+            <ModelItem key={model.name}>
+              <ModelInfo>
+                <ModelName>{model.name}</ModelName>
+                <ModelMeta>Size: {(model.size / (1024 * 1024 * 1024)).toFixed(1)}GB</ModelMeta>
+              </ModelInfo>
+              <ActionButton variant="delete" onClick={() => onDelete(model.name)}>
+                Delete
+              </ActionButton>
+            </ModelItem>
+          ))}
+          {localModels.length === 0 && <EmptyMessage>No models downloaded</EmptyMessage>}
+        </ModelList>
+      </Section>
+
+      <Section>
+        <SectionTitle>Available Models</SectionTitle>
+        <ModelList onScroll={handleCommunityScroll}>
+          {communityModels.map((model) => (
+            <ModelItem key={model.name}>
+              <ModelInfo>
+                <ModelName>{model.name}</ModelName>
+                <ModelMeta>{model.isInstalled && <span>Installed</span>}</ModelMeta>
+              </ModelInfo>
+              <ActionButton variant="download" onClick={() => onDownload(model.name)}>
+                {model.isInstalled ? 'Installed' : 'Download'}
+              </ActionButton>
+            </ModelItem>
+          ))}
+          {loadingMore && <LoadingMessage>Loading more models...</LoadingMessage>}
+          {!hasMoreModels && communityModels.length > 0 && (
+            <EmptyMessage>All {communityModels.length} models loaded</EmptyMessage>
+          )}
+          {communityModels.length === 0 && !loadingMore && (
+            <EmptyMessage>No models available</EmptyMessage>
+          )}
+        </ModelList>
+      </Section>
+    </LocalContainer>
+  );
+};
 
 // Remote Tab Component
 const RemoteTabContent: React.FC<{
   remoteModels: RemoteModel[];
   onToggleFavorite: (modelId: string) => void;
-  theme: any;
-}> = ({ remoteModels, onToggleFavorite, theme }) => (
-  <Section theme={theme}>
-    <SectionTitle theme={theme}>Morpheus API Models</SectionTitle>
-    <ModelList theme={theme}>
+}> = ({ remoteModels, onToggleFavorite }) => (
+  <Section>
+    <SectionTitle>Morpheus API Models</SectionTitle>
+    <ModelList>
       {remoteModels.map((model) => (
-        <ModelItem key={model.id} theme={theme}>
-          <ModelInfo theme={theme}>
-            <ModelName theme={theme}>{model.name}</ModelName>
-            <ModelMeta theme={theme}>{model.description}</ModelMeta>
+        <ModelItem key={model.id}>
+          <ModelInfo>
+            <ModelName>{model.name}</ModelName>
+            <ModelMeta>{model.description}</ModelMeta>
           </ModelInfo>
           <ActionButton
-            theme={theme}
             variant={model.isFavorite ? 'favorited' : 'favorite'}
             onClick={() => onToggleFavorite(model.id)}
           >
@@ -212,38 +264,42 @@ const RemoteTabContent: React.FC<{
           </ActionButton>
         </ModelItem>
       ))}
-      {remoteModels.length === 0 && (
-        <EmptyMessage theme={theme}>No remote models available</EmptyMessage>
-      )}
+      {remoteModels.length === 0 && <EmptyMessage>No remote models available</EmptyMessage>}
     </ModelList>
   </Section>
 );
 
 // Styled Components
-const Container = styled.div<{ theme: any }>`
+const Container = styled.div`
   padding: 20px;
   background: ${(props) => props.theme.colors.background};
-  color: ${(props) => props.theme.colors.text};
-  min-height: 100vh;
+  color: ${(props) => props.theme.colors.core};
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 `;
 
-const Header = styled.div<{ theme: any }>`
+const Header = styled.div`
   margin-bottom: 30px;
+  flex-shrink: 0;
 `;
 
-const Title = styled.h1<{ theme: any }>`
+const Title = styled.h1`
   color: ${(props) => props.theme.colors.emerald};
   margin: 0 0 20px 0;
   font-size: 24px;
   font-weight: 600;
 `;
 
-const TabContainer = styled.div<{ theme: any }>`
+const TabContainer = styled.div`
   display: flex;
   gap: 10px;
 `;
 
-const Tab = styled.button<{ theme: any; active: boolean }>`
+const Tab = styled.button.withConfig({
+  shouldForwardProp: (prop) => !['active'].includes(prop),
+})<{ active: boolean }>`
   padding: 12px 24px;
   background: ${(props) => (props.active ? props.theme.colors.emerald : 'transparent')};
   color: ${(props) => (props.active ? props.theme.colors.background : props.theme.colors.emerald)};
@@ -260,36 +316,45 @@ const Tab = styled.button<{ theme: any; active: boolean }>`
   }
 `;
 
-const Content = styled.div<{ theme: any }>`
-  background: ${(props) => props.theme.colors.surface};
+const Content = styled.div`
+  background: ${(props) => props.theme.colors.balance};
   border-radius: 12px;
   padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 `;
 
-const LocalContainer = styled.div<{ theme: any }>`
+const LocalContainer = styled.div`
   display: flex;
   flex-direction: column;
   gap: 30px;
+  flex: 1;
+  overflow-y: auto;
 `;
 
-const Section = styled.div<{ theme: any }>`
+const Section = styled.div`
   margin-bottom: 20px;
+  flex-shrink: 0;
 `;
 
-const SectionTitle = styled.h2<{ theme: any }>`
+const SectionTitle = styled.h2`
   color: ${(props) => props.theme.colors.emerald};
   font-size: 18px;
   font-weight: 600;
   margin: 0 0 15px 0;
 `;
 
-const ModelList = styled.div<{ theme: any }>`
+const ModelList = styled.div`
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 300px;
+  overflow-y: auto;
 `;
 
-const ModelItem = styled.div<{ theme: any }>`
+const ModelItem = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -299,22 +364,24 @@ const ModelItem = styled.div<{ theme: any }>`
   border: 1px solid ${(props) => props.theme.colors.border};
 `;
 
-const ModelInfo = styled.div<{ theme: any }>`
+const ModelInfo = styled.div`
   flex: 1;
 `;
 
-const ModelName = styled.div<{ theme: any }>`
-  color: ${(props) => props.theme.colors.text};
+const ModelName = styled.div`
+  color: ${(props) => props.theme.colors.core};
   font-weight: 500;
   margin-bottom: 4px;
 `;
 
-const ModelMeta = styled.div<{ theme: any }>`
+const ModelMeta = styled.div`
   color: ${(props) => props.theme.colors.textSecondary};
   font-size: 12px;
 `;
 
-const ActionButton = styled.button<{ theme: any; variant: string }>`
+const ActionButton = styled.button.withConfig({
+  shouldForwardProp: (prop) => !['variant'].includes(prop),
+})<{ variant: string }>`
   padding: 8px 16px;
   border-radius: 6px;
   border: none;
@@ -332,9 +399,9 @@ const ActionButton = styled.button<{ theme: any; variant: string }>`
         `;
       case 'delete':
         return `
-          background: ${props.theme.colors.error || '#ff4444'};
+          background: #ff4444;
           color: white;
-          &:hover { background: ${props.theme.colors.error || '#ff4444'}dd; }
+          &:hover { background: #ff4444dd; }
         `;
       case 'favorite':
         return `
@@ -355,13 +422,13 @@ const ActionButton = styled.button<{ theme: any; variant: string }>`
   }}
 `;
 
-const LoadingMessage = styled.div<{ theme: any }>`
+const LoadingMessage = styled.div`
   text-align: center;
   color: ${(props) => props.theme.colors.textSecondary};
   padding: 40px;
 `;
 
-const EmptyMessage = styled.div<{ theme: any }>`
+const EmptyMessage = styled.div`
   text-align: center;
   color: ${(props) => props.theme.colors.textSecondary};
   padding: 20px;

@@ -8,8 +8,6 @@ import {
   askOllama,
   getOrPullModel,
   getAvailableModelsFromRegistry,
-  clearRegistryCache,
-  getRegistryCacheStatus,
   checkDiskSpaceForModel,
   getDiskSpaceInfo,
   getCurrentModel,
@@ -91,10 +89,14 @@ export const setModelFolderPath = async (_: Electron.IpcMainEvent) => {
   return true;
 };
 
-// New handler for registry models
-export const getAvailableModelsFromRegistryHandler = async (_: Electron.IpcMainEvent) => {
+// New handler for registry models with scroll loading support
+export const getAvailableModelsFromRegistryHandler = async (
+  _: Electron.IpcMainEvent,
+  offset = 0,
+  limit = 20,
+) => {
   try {
-    const models = await getAvailableModelsFromRegistry();
+    const models = await getAvailableModelsFromRegistry(offset, limit);
     return models;
   } catch (err) {
     handleError(err);
@@ -102,40 +104,7 @@ export const getAvailableModelsFromRegistryHandler = async (_: Electron.IpcMainE
   }
 };
 
-// New handler for force refresh (bypasses cache)
-export const forceRefreshRegistryHandler = async (_: Electron.IpcMainEvent) => {
-  try {
-    console.log('Force refresh registry handler called');
-    const models = await getAvailableModelsFromRegistry(true);
-    console.log(`Force refresh returned ${models.length} models`);
-    return models;
-  } catch (err) {
-    console.error('Force refresh error:', err);
-    handleError(err);
-    return [];
-  }
-};
-
-// New handler for cache management
-export const clearRegistryCacheHandler = async (_: Electron.IpcMainEvent) => {
-  try {
-    clearRegistryCache();
-    return true;
-  } catch (err) {
-    handleError(err);
-    return false;
-  }
-};
-
-// New handler for cache status
-export const getRegistryCacheStatusHandler = async (_: Electron.IpcMainEvent) => {
-  try {
-    return getRegistryCacheStatus();
-  } catch (err) {
-    handleError(err);
-    return { hasCache: false, age: null, isExpired: true };
-  }
-};
+// Cache-related handlers removed - models are always fetched fresh
 
 export const checkDiskSpaceForModelHandler = async (_: any, modelSize: number) => {
   try {

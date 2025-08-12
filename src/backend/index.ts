@@ -17,9 +17,6 @@ import {
   getModelsFolderPath,
   stopOllamaServe,
   getAvailableModelsFromRegistryHandler,
-  forceRefreshRegistryHandler,
-  clearRegistryCacheHandler,
-  getRegistryCacheStatusHandler,
   checkDiskSpaceForModelHandler,
   getDiskSpaceInfoHandler,
   getCurrentModelHandler,
@@ -174,9 +171,7 @@ app.on('ready', async () => {
     OllamaChannel.OllamaGetAvailableModelsFromRegistry,
     getAvailableModelsFromRegistryHandler,
   );
-  ipcMain.handle(OllamaChannel.OllamaForceRefreshRegistry, forceRefreshRegistryHandler);
-  ipcMain.handle(OllamaChannel.OllamaClearRegistryCache, clearRegistryCacheHandler);
-  ipcMain.handle(OllamaChannel.OllamaGetRegistryCacheStatus, getRegistryCacheStatusHandler);
+  // Cache-related handlers removed - models are always fetched fresh
   ipcMain.handle(OllamaChannel.OllamaCheckDiskSpaceForModel, checkDiskSpaceForModelHandler);
   ipcMain.handle(OllamaChannel.OllamaGetDiskSpaceInfo, getDiskSpaceInfoHandler);
   ipcMain.handle(OllamaChannel.OllamaGetCurrentModel, getCurrentModelHandler);
