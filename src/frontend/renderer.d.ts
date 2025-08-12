@@ -59,8 +59,6 @@ export interface BackendBridge {
     getAllModels: () => Promise<ListResponse>;
     getModel: (model: string) => Promise<ModelResponse>;
     getAvailableModelsFromRegistry: (
-      offset?: number,
-      limit?: number,
       searchQuery?: string,
       sortBy?: 'name' | 'downloads' | 'pulls' | 'updated_at' | 'last_updated' | 'created_at',
       sortOrder?: 'asc' | 'desc',
