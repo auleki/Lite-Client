@@ -388,13 +388,15 @@ export const getAvailableModelsFromRegistry = async (
   }));
 
   // Check for duplicates in the final models array
-  const modelNames = updatedModels.map((m) => m.name);
+  const modelNames = updatedModels.map((m: any) => m.name);
   const uniqueNames = new Set(modelNames);
   if (modelNames.length !== uniqueNames.size) {
     logger.warn(
       `🚨 DEBUG: Found ${modelNames.length - uniqueNames.size} duplicate model names in final array!`,
     );
-    const duplicates = modelNames.filter((name, index) => modelNames.indexOf(name) !== index);
+    const duplicates = modelNames.filter(
+      (name: string, index: number) => modelNames.indexOf(name) !== index,
+    );
     logger.warn(`🚨 DEBUG: Duplicate names: ${duplicates.slice(0, 10).join(', ')}`);
   }
 
@@ -516,47 +518,73 @@ export const pullAndReplaceModel = async (newModelName: string) => {
   }
 };
 
-export const getModelDetails = async (modelName: string) => {
+// Get local model details using ollama.show() command
+export const getLocalModelDetails = async (modelName: string) => {
   try {
-    const url = `https://ollama.com/library/${modelName}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch model details: ${response.status}`);
+    if (!ollama) {
+      throw new Error('Ollama is not initialized');
     }
 
-    const html = await response.text();
+    const response = await ollama.show({ model: modelName });
 
-    // Extract description from the HTML
-    const descriptionMatch = html.match(/<p>([^<]+)<\/p>/);
-    const description = descriptionMatch ? descriptionMatch[1] : '';
+    // Log the response to see actual structure
+    logger.info(`Ollama show response for ${modelName}:`, JSON.stringify(response, null, 2));
 
-    // Extract parameter information from the URL or page content
-    const parameterMatch = modelName.match(/(\d+b)/i);
-    const parameters = parameterMatch ? parameterMatch[1] : '';
+    // Cast to any to bypass TypeScript interface limitations
+    const anyResponse = response as any;
 
-    // Extract features from the HTML
-    const featuresMatch = html.match(/<li>([^<]+)<\/li>/g);
-    const features = featuresMatch
-      ? featuresMatch.map((match) => match.replace(/<\/?li>/g, ''))
-      : [];
+    // Build parameters object including ALL fields from ollama show response
+    const parameters: Record<string, string> = {};
+
+    // Keep existing friendly name mappings
+    if (anyResponse.family) parameters['Architecture'] = anyResponse.family;
+    if (anyResponse.parameter_size) parameters['Parameters'] = anyResponse.parameter_size;
+    if (anyResponse.quantization_level) parameters['Quantization'] = anyResponse.quantization_level;
+    if (anyResponse.system) parameters['System prompt'] = anyResponse.system;
+
+    // Add all other fields from the response dynamically
+    const excludedFields = [
+      'family',
+      'parameter_size',
+      'quantization_level',
+      'system',
+      'parameters',
+    ];
+    Object.keys(anyResponse).forEach((key) => {
+      if (!excludedFields.includes(key) && anyResponse[key] != null) {
+        const value = anyResponse[key];
+        // Convert objects/arrays to JSON strings for display
+        const displayValue =
+          typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+        // Capitalize first letter of key for display
+        const displayKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+        parameters[displayKey] = displayValue;
+      }
+    });
+
+    // Handle parameters field specially to extract stop tokens properly
+    if (anyResponse.parameters) {
+      const stopTokens = anyResponse.parameters
+        .split('\n')
+        .filter((line: string) => line.includes('stop'));
+      if (stopTokens.length > 0) {
+        parameters['Stop tokens'] = stopTokens.join(', ').replace(/stop\s+/g, '');
+      }
+      // Also include raw parameters for completeness
+      parameters['Raw parameters'] = anyResponse.parameters;
+    }
 
     return {
       name: modelName,
-      description,
+      description: 'Local model - use ollama run ' + modelName + ' to interact',
+      tags: [], // ollama show doesn't provide tags in response
+      examples: [], // ollama show doesn't provide examples in response
       parameters,
-      features,
-      url,
+      url: '', // ollama show doesn't provide URLs
     };
   } catch (error) {
-    logger.error(`Failed to fetch details for ${modelName}:`, error);
-    return {
-      name: modelName,
-      description: 'Failed to load model details',
-      parameters: '',
-      features: [],
-      url: `https://ollama.com/library/${modelName}`,
-    };
+    logger.error(`Failed to get local model details for ${modelName}:`, error);
+    throw error;
   }
 };
 
