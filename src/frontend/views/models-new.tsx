@@ -522,35 +522,45 @@ const LocalTabContent: React.FC<{
           )}
         </SearchContainer>
 
-        <ModelList>
-          {communityModels.map((model) => (
-            <ModelItem key={model.name}>
-              <ModelInfo>
-                <ModelName>{model.name}</ModelName>
-                <ModelMeta>{model.isInstalled && <span>Installed</span>}</ModelMeta>
-              </ModelInfo>
-              <ModelActions>
-                <ActionButton
-                  variant="info"
-                  onClick={() => onModelInfo(model.url || '', model.name)}
-                  disabled={loadingModelInfo}
-                >
-                  {loadingModelInfo ? 'Loading...' : 'Info'}
-                </ActionButton>
-                <ActionButton variant="download" onClick={() => onDownload(model.name)}>
-                  {model.isInstalled ? 'Installed' : 'Download'}
-                </ActionButton>
-              </ModelActions>
-            </ModelItem>
-          ))}
-          {isSearching && <LoadingMessage>Searching...</LoadingMessage>}
-          {searchQuery && communityModels.length === 0 && !isSearching && (
-            <EmptyMessage>No models found for "{searchQuery}"</EmptyMessage>
-          )}
-          {!searchQuery && communityModels.length === 0 && !isSearching && (
-            <EmptyMessage>No models available</EmptyMessage>
-          )}
-        </ModelList>
+        {communityModels.length === 0 ? (
+          <>
+            {isSearching && <LoadingMessage>Searching...</LoadingMessage>}
+            {searchQuery && !isSearching && (
+              <EmptyMessage>No models found for "{searchQuery}"</EmptyMessage>
+            )}
+            {!searchQuery && !isSearching && <EmptyMessage>No models available</EmptyMessage>}
+          </>
+        ) : (
+          <ModelTable>
+            <TableHeader>
+              <TableHeaderRow>
+                <TableHeaderCell>Model Name</TableHeaderCell>
+                <TableHeaderCell>Actions</TableHeaderCell>
+              </TableHeaderRow>
+            </TableHeader>
+            <TableBody>
+              {communityModels.map((model) => (
+                <TableRow key={model.name}>
+                  <ModelNameCell>{model.name}</ModelNameCell>
+                  <ActionCell>
+                    <ModelActions>
+                      <ActionButton
+                        variant="info"
+                        onClick={() => onModelInfo(model.url || '', model.name)}
+                        disabled={loadingModelInfo}
+                      >
+                        {loadingModelInfo ? 'Loading...' : 'Info'}
+                      </ActionButton>
+                      <ActionButton variant="download" onClick={() => onDownload(model.name)}>
+                        {model.isInstalled ? 'Installed' : 'Download'}
+                      </ActionButton>
+                    </ModelActions>
+                  </ActionCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </ModelTable>
+        )}
       </Section>
     </LocalContainer>
   );
