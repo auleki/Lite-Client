@@ -559,3 +559,104 @@ export const getModelDetails = async (modelName: string) => {
     };
   }
 };
+
+// Scrape model information from Ollama website
+export const scrapeModelInfo = async (modelUrl: string, modelName: string) => {
+  logger.info(`Scraping model info for: ${modelName} from ${modelUrl}`);
+
+  try {
+    const response = await fetch(modelUrl, {
+      headers: {
+        'User-Agent': 'Morpheus-Client/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch model page: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // Parse model information from HTML
+    const modelInfo = {
+      name: modelName,
+      description: extractDescription(html),
+      tags: extractTags(html),
+      examples: extractExamples(html),
+      parameters: extractParameters(html),
+      url: modelUrl,
+    };
+
+    logger.info(`Scraped model info for ${modelName}:`, modelInfo);
+    return modelInfo;
+  } catch (error) {
+    logger.error(`Failed to scrape model info for ${modelName}:`, error);
+    throw error;
+  }
+};
+
+// Helper functions to extract data from HTML
+function extractDescription(html: string): string {
+  // Look for description in meta tags or main content
+  const metaDescMatch = html.match(
+    /<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i,
+  );
+  if (metaDescMatch) {
+    return metaDescMatch[1];
+  }
+
+  // Fallback: look for description in page content
+  const descMatch = html.match(/<p[^>]*class=["'][^"']*description[^"']*["'][^>]*>([^<]*)</i);
+  if (descMatch) {
+    return descMatch[1].trim();
+  }
+
+  return 'No description available';
+}
+
+function extractTags(html: string): string[] {
+  const tags: string[] = [];
+
+  // Look for tags in various formats
+  const tagMatches = html.matchAll(/<span[^>]*class=["'][^"']*tag[^"']*["'][^>]*>([^<]*)</gi);
+  for (const match of tagMatches) {
+    const tag = match[1].trim();
+    if (tag && !tags.includes(tag)) {
+      tags.push(tag);
+    }
+  }
+
+  return tags;
+}
+
+function extractExamples(html: string): string[] {
+  const examples: string[] = [];
+
+  // Look for code blocks or example sections
+  const codeMatches = html.matchAll(/<code[^>]*>([^<]*)</gi);
+  for (const match of codeMatches) {
+    const example = match[1].trim();
+    if (example && example.length > 10 && !examples.includes(example)) {
+      examples.push(example);
+    }
+  }
+
+  return examples.slice(0, 3); // Limit to 3 examples
+}
+
+function extractParameters(html: string): Record<string, string> {
+  const params: Record<string, string> = {};
+
+  // Look for parameter information
+  const sizeMatch = html.match(/([0-9.]+[BMG])/i);
+  if (sizeMatch) {
+    params.size = sizeMatch[1];
+  }
+
+  const familyMatch = html.match(/family["']?\s*:\s*["']?([^"',\s}]+)/i);
+  if (familyMatch) {
+    params.family = familyMatch[1];
+  }
+
+  return params;
+}

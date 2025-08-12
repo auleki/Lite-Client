@@ -25,6 +25,7 @@ export enum OllamaChannel {
   OllamaDeleteModel = 'ollama:delete-model',
   OllamaPullAndReplaceModel = 'ollama:pull-and-replace-model',
   OllamaGetModelDetails = 'ollama:get-model-details',
+  OllamaOpenModelInfoModal = 'ollama:open-model-info-modal',
 }
 
 export enum InferenceChannel {

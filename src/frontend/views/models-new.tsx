@@ -60,6 +60,18 @@ const ModelsView: React.FC = () => {
   const [totalSearchPages, setTotalSearchPages] = useState(0);
   const [totalSearchResults, setTotalSearchResults] = useState(0);
 
+  // Model info modal state
+  const [showModelInfoModal, setShowModelInfoModal] = useState(false);
+  const [selectedModelInfo, setSelectedModelInfo] = useState<{
+    name: string;
+    description: string;
+    tags: string[];
+    examples: string[];
+    parameters: Record<string, string>;
+    url: string;
+  } | null>(null);
+  const [loadingModelInfo, setLoadingModelInfo] = useState(false);
+
   // Load data when tab changes
   useEffect(() => {
     loadTabData();
@@ -173,6 +185,30 @@ const ModelsView: React.FC = () => {
   const handleToggleFavorite = (modelId: string) => {
     // TODO: Implement favorites in local storage
     console.log('Toggle favorite for:', modelId);
+  };
+
+  const handleModelInfo = async (modelUrl: string, modelName: string) => {
+    setLoadingModelInfo(true);
+    try {
+      const response = await window.backendBridge.ollama.getModelInfo(modelUrl, modelName);
+      if (response.success && response.data) {
+        setSelectedModelInfo(response.data);
+        setShowModelInfoModal(true);
+      } else {
+        console.error('Failed to get model info:', response.error);
+        alert('Failed to load model information. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to get model info:', error);
+      alert('Failed to load model information. Please try again.');
+    } finally {
+      setLoadingModelInfo(false);
+    }
+  };
+
+  const closeModelInfoModal = () => {
+    setShowModelInfoModal(false);
+    setSelectedModelInfo(null);
   };
 
   // Search and sort handlers
@@ -356,6 +392,8 @@ const ModelsView: React.FC = () => {
                 currentSearchPage={currentSearchPage}
                 totalSearchPages={totalSearchPages}
                 onSearchPageChange={handleSearchPageChange}
+                onModelInfo={handleModelInfo}
+                loadingModelInfo={loadingModelInfo}
               />
             ) : (
               <RemoteTabContent
@@ -366,6 +404,72 @@ const ModelsView: React.FC = () => {
           </>
         )}
       </Content>
+
+      {/* Model Info Modal */}
+      {showModelInfoModal && selectedModelInfo && (
+        <ModelInfoModal>
+          <ModalOverlay onClick={closeModelInfoModal} />
+          <ModalContent>
+            <ModalHeader>
+              <ModalTitle>{selectedModelInfo.name}</ModalTitle>
+              <CloseButton onClick={closeModelInfoModal}>✕</CloseButton>
+            </ModalHeader>
+
+            <ModalBody>
+              <InfoSection>
+                <SectionLabel>Description</SectionLabel>
+                <InfoText>{selectedModelInfo.description}</InfoText>
+              </InfoSection>
+
+              {selectedModelInfo.tags.length > 0 && (
+                <InfoSection>
+                  <SectionLabel>Tags</SectionLabel>
+                  <TagsContainer>
+                    {selectedModelInfo.tags.map((tag, index) => (
+                      <Tag key={index}>{tag}</Tag>
+                    ))}
+                  </TagsContainer>
+                </InfoSection>
+              )}
+
+              {Object.keys(selectedModelInfo.parameters).length > 0 && (
+                <InfoSection>
+                  <SectionLabel>Parameters</SectionLabel>
+                  <ParametersContainer>
+                    {Object.entries(selectedModelInfo.parameters).map(([key, value]) => (
+                      <Parameter key={key}>
+                        <ParameterKey>{key}:</ParameterKey>
+                        <ParameterValue>{value}</ParameterValue>
+                      </Parameter>
+                    ))}
+                  </ParametersContainer>
+                </InfoSection>
+              )}
+
+              {selectedModelInfo.examples.length > 0 && (
+                <InfoSection>
+                  <SectionLabel>Examples</SectionLabel>
+                  {selectedModelInfo.examples.map((example, index) => (
+                    <CodeExample key={index}>{example}</CodeExample>
+                  ))}
+                </InfoSection>
+              )}
+            </ModalBody>
+
+            <ModalFooter>
+              <ActionButton
+                variant="info"
+                onClick={() => window.open(selectedModelInfo.url, '_blank')}
+              >
+                View on Ollama
+              </ActionButton>
+              <ActionButton variant="download" onClick={closeModelInfoModal}>
+                Close
+              </ActionButton>
+            </ModalFooter>
+          </ModalContent>
+        </ModelInfoModal>
+      )}
     </Container>
   );
 };
@@ -391,6 +495,8 @@ const LocalTabContent: React.FC<{
   currentSearchPage: number;
   totalSearchPages: number;
   onSearchPageChange: (page: number) => void;
+  onModelInfo: (modelUrl: string, modelName: string) => void;
+  loadingModelInfo: boolean;
 }> = ({
   localModels,
   communityModels,
@@ -411,6 +517,8 @@ const LocalTabContent: React.FC<{
   currentSearchPage,
   totalSearchPages,
   onSearchPageChange,
+  onModelInfo,
+  loadingModelInfo,
 }) => {
   // Scroll detection for community models list (only when not searching)
   const handleCommunityScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -493,9 +601,18 @@ const LocalTabContent: React.FC<{
                 <ModelName>{model.name}</ModelName>
                 <ModelMeta>{model.isInstalled && <span>Installed</span>}</ModelMeta>
               </ModelInfo>
-              <ActionButton variant="download" onClick={() => onDownload(model.name)}>
-                {model.isInstalled ? 'Installed' : 'Download'}
-              </ActionButton>
+              <ModelActions>
+                <ActionButton
+                  variant="info"
+                  onClick={() => onModelInfo(model.url, model.name)}
+                  disabled={loadingModelInfo}
+                >
+                  {loadingModelInfo ? 'Loading...' : 'Info'}
+                </ActionButton>
+                <ActionButton variant="download" onClick={() => onDownload(model.name)}>
+                  {model.isInstalled ? 'Installed' : 'Download'}
+                </ActionButton>
+              </ModelActions>
             </ModelItem>
           ))}
           {isSearching && <LoadingMessage>Searching...</LoadingMessage>}
@@ -693,6 +810,12 @@ const ModelMeta = styled.div`
   font-size: 12px;
 `;
 
+const ModelActions = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+`;
+
 const ActionButton = styled.button.withConfig({
   shouldForwardProp: (prop) => !['variant'].includes(prop),
 })<{ variant: string }>`
@@ -705,6 +828,13 @@ const ActionButton = styled.button.withConfig({
 
   ${(props) => {
     switch (props.variant) {
+      case 'info':
+        return `
+          background: transparent;
+          color: ${props.theme.colors.core};
+          border: 1px solid ${props.theme.colors.border};
+          &:hover { background: ${props.theme.colors.balance}; }
+        `;
       case 'download':
         return `
           background: ${props.theme.colors.emerald};
@@ -913,6 +1043,147 @@ const PaginationNumber = styled.button<{ active: boolean }>`
       props.active ? props.theme.colors.emerald : props.theme.colors.emerald + '20'};
     border-color: ${(props) => props.theme.colors.emerald};
   }
+`;
+
+// Model Info Modal Components
+const ModelInfoModal = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const ModalOverlay = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+`;
+
+const ModalContent = styled.div`
+  position: relative;
+  background: ${(props) => props.theme.colors.background};
+  border-radius: 12px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  border: 1px solid ${(props) => props.theme.colors.border};
+`;
+
+const ModalHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid ${(props) => props.theme.colors.border};
+`;
+
+const ModalTitle = styled.h2`
+  color: ${(props) => props.theme.colors.emerald};
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+`;
+
+const CloseButton = styled.button`
+  background: none;
+  border: none;
+  color: ${(props) => props.theme.colors.textSecondary};
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+
+  &:hover {
+    color: ${(props) => props.theme.colors.core};
+  }
+`;
+
+const ModalBody = styled.div`
+  padding: 20px;
+  max-height: 50vh;
+  overflow-y: auto;
+`;
+
+const ModalFooter = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px;
+  border-top: 1px solid ${(props) => props.theme.colors.border};
+`;
+
+const InfoSection = styled.div`
+  margin-bottom: 20px;
+`;
+
+const SectionLabel = styled.h3`
+  color: ${(props) => props.theme.colors.core};
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+`;
+
+const InfoText = styled.p`
+  color: ${(props) => props.theme.colors.core};
+  margin: 0;
+  line-height: 1.5;
+`;
+
+const TagsContainer = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+`;
+
+const Tag = styled.span`
+  background: ${(props) => props.theme.colors.emerald}20;
+  color: ${(props) => props.theme.colors.emerald};
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+`;
+
+const ParametersContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const Parameter = styled.div`
+  display: flex;
+  gap: 8px;
+`;
+
+const ParameterKey = styled.span`
+  color: ${(props) => props.theme.colors.emerald};
+  font-weight: 500;
+  min-width: 80px;
+`;
+
+const ParameterValue = styled.span`
+  color: ${(props) => props.theme.colors.core};
+`;
+
+const CodeExample = styled.pre`
+  background: ${(props) => props.theme.colors.balance};
+  border: 1px solid ${(props) => props.theme.colors.border};
+  border-radius: 6px;
+  padding: 12px;
+  margin: 8px 0;
+  color: ${(props) => props.theme.colors.core};
+  font-size: 14px;
+  overflow-x: auto;
+  white-space: pre-wrap;
 `;
 
 export default ModelsView;

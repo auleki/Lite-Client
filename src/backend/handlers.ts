@@ -451,3 +451,19 @@ export const migrateChatHandler = async (
     throw err;
   }
 };
+
+// Scrape and return model info (no modal window)
+export const getModelInfoHandler = async (
+  _: Electron.IpcMainEvent,
+  modelUrl: string,
+  modelName: string,
+) => {
+  try {
+    const { scrapeModelInfo } = await import('./services/ollama');
+    const modelInfo = await scrapeModelInfo(modelUrl, modelName);
+    return { success: true, data: modelInfo };
+  } catch (error) {
+    handleError(error);
+    return { success: false, error: error.message };
+  }
+};
