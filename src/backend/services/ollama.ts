@@ -24,44 +24,7 @@ import { logger } from './logger';
 // constants
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434/';
 
-// Cache configuration
-const CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
-
-// In-memory cache
-let registryCache: {
-  data: any[];
-  timestamp: number;
-} | null = null;
-
-// Persistent cache functions
-const saveCacheToStorage = (data: any[]) => {
-  try {
-    const cacheData = {
-      data,
-      timestamp: Date.now(),
-    };
-    const cachePath = path.join(app.getPath('userData'), 'cache.json');
-    fs.writeFileSync(cachePath, JSON.stringify(cacheData));
-    logger.info('Cache saved to persistent storage');
-  } catch (err) {
-    logger.error('Failed to save cache to storage:', err);
-  }
-};
-
-const loadCacheFromStorage = () => {
-  try {
-    const cachePath = path.join(app.getPath('userData'), 'cache.json');
-    if (fs.existsSync(cachePath)) {
-      const cacheData = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-      registryCache = cacheData;
-      logger.info('Cache loaded from persistent storage');
-      return true;
-    }
-  } catch (err) {
-    logger.error('Failed to load cache from storage:', err);
-  }
-  return false;
-};
+// No caching for models - always fetch fresh data
 
 // commands
 export const SERVE_OLLAMA_CMD = 'ollama serve';
@@ -183,20 +146,92 @@ export const getOllamaExecutableAndAppDataPath = (
   };
 };
 
-export const askOllama = async (model: string, message: string) => {
-  return await ollama.chat({
-    model,
-    messages: [
+/**
+ * Warm up a model by loading it into memory (no response needed)
+ */
+export const warmUpModel = async (model: string): Promise<void> => {
+  if (!ollama) {
+    logger.warn('Cannot warm up model - Ollama not initialized');
+    return;
+  }
+
+  try {
+    logger.info(`Warming up model: ${model}`);
+
+    // Create a timeout wrapper for the warmup operation
+    const warmupPromise = ollama.chat({
+      model,
+      messages: [{ role: 'user', content: 'hello' }],
+      keep_alive: '10m',
+    });
+
+    // Set a generous 60-second timeout for warmup
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Model warmup timeout')), 60000);
+    });
+
+    await Promise.race([warmupPromise, timeoutPromise]);
+    logger.info(`Model ${model} warmed up successfully`);
+  } catch (error) {
+    if (error.message === 'Model warmup timeout') {
+      logger.warn(`Model ${model} warmup timed out after 60 seconds`);
+    } else {
+      logger.warn(`Failed to warm up model ${model}:`, error);
+    }
+  }
+};
+
+export const askOllama = async (model: string, message: string, conversationHistory?: any[]) => {
+  console.log(`[askOllama] Called with model: ${model}, message length: ${message.length}`);
+  console.log(`[askOllama] Conversation history length: ${conversationHistory?.length || 0}`);
+  console.log(`[askOllama] Ollama instance exists: ${!!ollama}`);
+
+  if (!ollama) {
+    console.error('[askOllama] Ollama instance is not initialized!');
+    throw new Error('Ollama instance is not initialized');
+  }
+
+  try {
+    // Build messages array with conversation history
+    const messages: any[] = [
       {
         role: 'system',
         content: MOR_PROMPT,
       },
-      {
-        role: 'user',
-        content: `Answer the following query in a valid formatted JSON object without comments with both the response and action fields deduced from the user's question. Adhere strictly to JSON syntax without comments. Query: ${message}. Response: { "response":`,
-      },
-    ],
-  });
+    ];
+
+    // Add conversation history if provided
+    if (conversationHistory && conversationHistory.length > 0) {
+      // Convert chat messages to Ollama format and add to messages
+      for (const historyMessage of conversationHistory) {
+        if (historyMessage.role === 'user' || historyMessage.role === 'assistant') {
+          messages.push({
+            role: historyMessage.role,
+            content: historyMessage.content,
+          });
+        }
+      }
+    }
+
+    // Add the current user message
+    messages.push({
+      role: 'user',
+      content: message,
+    });
+
+    console.log(`[askOllama] Sending ${messages.length} messages to model`);
+
+    const result = await ollama.chat({
+      model,
+      messages,
+      keep_alive: '10m', // Keep model loaded for 10 minutes to avoid reload delays
+    });
+    console.log('[askOllama] Chat completed successfully');
+    return result;
+  } catch (error) {
+    console.error('[askOllama] Error during chat:', error);
+    throw error;
+  }
 };
 
 export const getOrPullModel = async (model: string) => {
@@ -250,416 +285,71 @@ export const stopOllama = async () => {
   ollamaProcess = null;
 };
 
-// New function to fetch models from Ollama registry with caching
-export const getAvailableModelsFromRegistry = async (forceRefresh = false) => {
-  try {
-    // Load from persistent storage if in-memory cache is empty
-    if (!registryCache) {
-      loadCacheFromStorage();
+// Fetch models from Ollama registry - always fresh data, no caching
+export const getAvailableModelsFromRegistry = async (
+  searchQuery?: string,
+  sortBy?: 'name' | 'downloads' | 'pulls' | 'updated_at' | 'last_updated' | 'created_at',
+  sortOrder?: 'asc' | 'desc',
+) => {
+  // Build URL with parameters - always use limit=500, skip=0
+  const params = new URLSearchParams();
+  params.append('limit', '500');
+  params.append('skip', '0');
+
+  if (searchQuery && searchQuery.trim()) {
+    // Search mode: add search term and optional sort
+    params.append('search', searchQuery.trim());
+    if (sortBy) {
+      params.append('sort_by', sortBy);
     }
-
-    // Check cache first (unless force refresh is requested)
-    if (!forceRefresh && registryCache && Date.now() - registryCache.timestamp < CACHE_DURATION) {
-      logger.info('Returning cached registry data');
-      return registryCache.data;
+    if (sortOrder) {
+      params.append('order', sortOrder);
     }
-
-    logger.info('Fetching fresh data from Ollama registry');
-    // Use the community API that provides access to the full model registry
-    let response;
-    try {
-      // Fetch all models with pagination - get 200 models to ensure we get everything
-      response = await fetch('https://ollamadb.dev/api/v1/models?limit=200', {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'Morpheus-Client/1.0',
-        },
-      });
-
-      logger.info(`Community API response status: ${response.status}`);
-
-      if (!response.ok) {
-        throw new Error(`Community API request failed: ${response.status} ${response.statusText}`);
-      }
-    } catch (error) {
-      logger.error('Failed to fetch from community API:', error);
-      // Fall back to the original API
-      logger.info('Falling back to original Ollama API');
-      response = await fetch('https://ollama.com/api/tags', {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'Morpheus-Client/1.0',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch registry: ${response.status} ${response.statusText}`);
-      }
-    }
-
-    const data = await response.json();
-    logger.info(`API response received: ${JSON.stringify(data).substring(0, 200)}...`);
-    logger.info(`API response structure: models array length = ${data.models?.length || 0}`);
-    if (data.total_count) {
-      logger.info(`Total models available: ${data.total_count}`);
-    }
-
-    // Transform the data to match our expected format
-    // The community API returns {models: [...]} format
-    const models = data.models
-      ? data.models.map((model: any) => {
-          // Generate tags based on model name, description, and URL
-          const generateTags = (modelName: string, description: string, url?: string) => {
-            const tags: string[] = [];
-
-            // Extract model family from name
-            if (modelName.includes('llama')) tags.push('llama');
-            if (modelName.includes('mistral')) tags.push('mistral');
-            if (modelName.includes('gemma')) tags.push('gemma');
-            if (modelName.includes('qwen')) tags.push('qwen');
-            if (modelName.includes('phi')) tags.push('phi');
-            if (modelName.includes('deepseek')) tags.push('deepseek');
-            if (modelName.includes('nomic')) tags.push('nomic');
-            if (modelName.includes('llava')) tags.push('llava');
-            if (modelName.includes('orca')) tags.push('orca');
-            if (modelName.includes('neural')) tags.push('neural');
-            if (modelName.includes('code')) tags.push('code');
-            if (modelName.includes('codellama')) tags.push('code');
-
-            // Extract size indicators
-            if (modelName.includes('3b') || modelName.includes('3B')) tags.push('3b');
-            if (modelName.includes('7b') || modelName.includes('7B')) tags.push('7b');
-            if (modelName.includes('13b') || modelName.includes('13B')) tags.push('13b');
-            if (modelName.includes('70b') || modelName.includes('70B')) tags.push('70b');
-
-            // Extract capabilities from description and URL
-            const descriptionLower = description.toLowerCase();
-            const urlLower = url?.toLowerCase() || '';
-
-            if (
-              descriptionLower.includes('code') ||
-              modelName.includes('code') ||
-              urlLower.includes('code')
-            )
-              tags.push('programming');
-            if (descriptionLower.includes('chat') || urlLower.includes('chat')) tags.push('chat');
-            if (
-              descriptionLower.includes('vision') ||
-              modelName.includes('llava') ||
-              urlLower.includes('vision')
-            )
-              tags.push('vision');
-            if (descriptionLower.includes('embed') || urlLower.includes('embed'))
-              tags.push('embedding');
-            if (descriptionLower.includes('text') || urlLower.includes('text')) tags.push('text');
-            if (descriptionLower.includes('instruct') || urlLower.includes('instruct'))
-              tags.push('instruct');
-
-            // Add general tags
-            tags.push('ai');
-            tags.push('llm');
-
-            return [...new Set(tags)]; // Remove duplicates
-          };
-
-          return {
-            name: model.model_name || model.model_identifier,
-            description: model.description || '',
-            size: model.size || 4.1 * 1024 * 1024 * 1024, // Default to 4.1GB if not specified
-            modifiedAt: model.last_updated || '2024-01-01T00:00:00Z',
-            digest: model.digest || 'sha256:1234567890abcdef',
-            tags: generateTags(
-              model.model_name || model.model_identifier,
-              model.description || '',
-              model.url,
-            ),
-            url: model.url || '',
-            isInstalled: false, // Will be computed by comparing with local models
-          };
-        })
-      : [];
-
-    logger.info(`Transformed ${models.length} models from API`);
-    if (models.length > 0) {
-      logger.info(`First model: ${models[0].name}`);
-    }
-
-    // If we get very few models from the API (less than 10), supplement with curated list
-    if (models.length < 10) {
-      logger.info(`API returned only ${models.length} models, supplementing with curated list`);
-
-      // Get existing model names to avoid duplicates
-      const existingNames = new Set(models.map((m: any) => m.name));
-
-      // Add curated models that aren't already in the list
-      const curatedModels = POPULAR_MODELS.filter((model) => !existingNames.has(model.name));
-
-      // Combine API models with curated models
-      const combinedModels = [...models, ...curatedModels];
-
-      // Update cache with combined list
-      registryCache = {
-        data: combinedModels,
-        timestamp: Date.now(),
-      };
-
-      // Save to persistent storage
-      saveCacheToStorage(combinedModels);
-
-      logger.info(
-        `Combined ${models.length} API models with ${curatedModels.length} curated models (total: ${combinedModels.length})`,
-      );
-      return combinedModels;
-    }
-
-    // Update cache
-    registryCache = {
-      data: models,
-      timestamp: Date.now(),
-    };
-
-    // Save to persistent storage
-    saveCacheToStorage(models);
-
-    logger.info(`Fetched ${models.length} models from registry and cached`);
-    return models;
-  } catch (err) {
-    logger.error('Failed to fetch models from registry:', err);
-
-    // Return cached data if available (even if expired) as fallback
-    if (registryCache) {
-      logger.info('Returning stale cached data as fallback');
-      return registryCache.data;
-    }
-
-    // If no cache and API fails, return curated list as final fallback
-    logger.info('API failed and no cache available, returning curated model list');
-    return POPULAR_MODELS;
-  }
-};
-
-// Function to clear cache (useful for testing or manual refresh)
-export const clearRegistryCache = () => {
-  registryCache = null;
-  logger.info('Registry cache cleared');
-};
-
-// Function to get cache status
-export const getRegistryCacheStatus = () => {
-  if (!registryCache) {
-    return { hasCache: false, age: null, isExpired: true };
+  } else {
+    // No search: use fixed sort by popularity
+    params.append('sort_by', 'pulls');
+    params.append('order', 'desc');
   }
 
-  const age = Date.now() - registryCache.timestamp;
-  const isExpired = age > CACHE_DURATION;
+  const url = `https://ollamadb.dev/api/v1/models?${params}`;
 
-  return {
-    hasCache: true,
-    age: age,
-    isExpired: isExpired,
-    cacheDuration: CACHE_DURATION,
-  };
+  // Fetch from community API
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'Morpheus-Client/1.0',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Community API request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  // Transform the data to match our expected format - pure API passthrough
+  // The community API returns {models: [...]} format
+  const models = data.models
+    ? data.models.map((model: any, index: number) => {
+        // Use model_name first (from ollamadb.dev), then fallback to name, then index-based fallback
+        const modelName = model.model_name || model.name || `unknown-${index}`;
+
+        return {
+          name: modelName,
+          description: model.description || '',
+          modifiedAt: model.last_updated || '2024-01-01T00:00:00Z',
+          digest: model.digest || 'sha256:1234567890abcdef',
+          tags: model.tags || ['ai', 'llm'],
+          url: model.url || '',
+          isInstalled: false, // Default - no processing
+        };
+      })
+    : [];
+
+  return models;
 };
 
-// Curated list of popular models as fallback
-const POPULAR_MODELS = [
-  {
-    name: 'llama2',
-    description:
-      "Meta's Llama 2 is a collection of pretrained and fine-tuned generative text models",
-    size: 3.8 * 1024 * 1024 * 1024, // ~3.8GB
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', 'chat'],
-    isInstalled: false,
-  },
-  {
-    name: 'llama2:7b',
-    description: 'Llama 2 7B parameter model - good balance of performance and resource usage',
-    size: 3.8 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', '7b'],
-    isInstalled: false,
-  },
-  {
-    name: 'llama2:13b',
-    description: 'Llama 2 13B parameter model - higher quality responses',
-    size: 7.3 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', '13b'],
-    isInstalled: false,
-  },
-  {
-    name: 'llama2:70b',
-    description: 'Llama 2 70B parameter model - highest quality, requires more resources',
-    size: 39 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', '70b'],
-    isInstalled: false,
-  },
-  {
-    name: 'codellama',
-    description: 'Code Llama is a collection of pretrained and fine-tuned generative text models',
-    size: 3.8 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['code', 'llama', 'programming'],
-    isInstalled: false,
-  },
-  {
-    name: 'codellama:7b',
-    description: 'Code Llama 7B - specialized for code generation and understanding',
-    size: 3.8 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['code', 'llama', '7b', 'programming'],
-    isInstalled: false,
-  },
-  {
-    name: 'mistral',
-    description: 'Mistral 7B is a 7.3B parameter model that demonstrates high performance',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['mistral', '7b'],
-    isInstalled: false,
-  },
-  {
-    name: 'mistral:7b',
-    description: 'Mistral 7B - high performance 7B parameter model',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['mistral', '7b'],
-    isInstalled: false,
-  },
-  {
-    name: 'orca-mini',
-    description: 'Orca Mini is a 3B parameter model from Microsoft',
-    size: 1.9 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['orca', 'microsoft', '3b'],
-    isInstalled: false,
-  },
-  {
-    name: 'orca-mini:3b',
-    description: 'Orca Mini 3B - lightweight model good for basic tasks',
-    size: 1.9 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['orca', 'microsoft', '3b'],
-    isInstalled: false,
-  },
-  {
-    name: 'neural-chat',
-    description: 'Neural Chat is a 7B parameter model fine-tuned for chat',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['neural', 'chat', '7b'],
-    isInstalled: false,
-  },
-  {
-    name: 'deepseek-r1',
-    description:
-      'DeepSeek-R1 is a family of open reasoning models with performance approaching that of leading models',
-    size: 1275 * 1024 * 1024 * 1024, // 1275GB
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['deepseek', 'reasoning', 'tools', '671b'],
-    isInstalled: false,
-  },
-  {
-    name: 'gemma3',
-    description: 'Gemma 3 is the current, most capable model that runs on a single GPU',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['gemma', 'google', 'vision'],
-    isInstalled: false,
-  },
-  {
-    name: 'qwen3',
-    description: 'Qwen3 is the latest generation of large language models in Qwen series',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['qwen', 'alibaba', 'tools', 'thinking'],
-    isInstalled: false,
-  },
-  {
-    name: 'llama3.1',
-    description:
-      'Llama 3.1 is a new state-of-the-art model from Meta available in 8B, 70B and 405B parameter sizes',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['llama', 'meta', 'tools'],
-    isInstalled: false,
-  },
-  {
-    name: 'mistral',
-    description: 'The 7B model released by Mistral AI, updated to version 0.3',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['mistral', 'tools'],
-    isInstalled: false,
-  },
-  {
-    name: 'llava',
-    description:
-      'LLaVA is a novel end-to-end trained large multimodal model for visual and language understanding',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['llava', 'vision', 'multimodal'],
-    isInstalled: false,
-  },
-  {
-    name: 'phi3',
-    description:
-      'Phi-3 is a family of lightweight 3B (Mini) and 14B (Medium) state-of-the-art open models by Microsoft',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['phi', 'microsoft'],
-    isInstalled: false,
-  },
-  {
-    name: 'gemma2',
-    description:
-      'Google Gemma 2 is a high-performing and efficient model available in three sizes: 2B, 9B, and 27B',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['gemma', 'google'],
-    isInstalled: false,
-  },
-  {
-    name: 'qwen2.5-coder',
-    description:
-      'The latest series of Code-Specific Qwen models, with significant improvements in code generation',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['qwen', 'code', 'tools'],
-    isInstalled: false,
-  },
-  {
-    name: 'neural-chat:7b',
-    description: 'Neural Chat 7B - optimized for conversational AI',
-    size: 4.1 * 1024 * 1024 * 1024,
-    modifiedAt: '2024-01-01T00:00:00Z',
-    digest: 'sha256:1234567890abcdef',
-    tags: ['neural', 'chat', '7b'],
-    isInstalled: false,
-  },
-];
+// No cache functions needed - models are always fetched fresh
 
 // Function to check if there's enough disk space for a model
 export const checkDiskSpaceForModel = async (modelSize: number) => {
@@ -719,12 +409,25 @@ export const getDiskSpaceInfo = async () => {
   }
 };
 
-// Function to get the currently loaded model
+// Function to get the currently loaded model using /api/ps endpoint
 export const getCurrentModel = async () => {
   try {
-    const allModels = await ollama.list();
-    // Return the first model that's currently loaded (if any)
-    return allModels.models.find((m) => m.parameter_size) || null;
+    // Use the /api/ps endpoint to get currently running/loaded models
+    const response = await fetch(`${DEFAULT_OLLAMA_URL}api/ps`);
+
+    if (!response.ok) {
+      logger.warn(`Failed to fetch running models: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+
+    // Return the first running model if any exist
+    if (data.models && data.models.length > 0) {
+      return data.models[0];
+    }
+
+    return null;
   } catch (err) {
     logger.error('Failed to get current model:', err);
     return null;
@@ -746,27 +449,185 @@ export const deleteModel = async (modelName: string) => {
 // Function to pull and replace current model
 export const pullAndReplaceModel = async (newModelName: string) => {
   try {
-    // Get current model
-    const currentModel = await getCurrentModel();
-
-    // Pull the new model first
-    await sendOllamaStatusToRenderer(`Pulling new model: ${newModelName}`);
+    // First, pull the new model
     await installModelWithStatus(newModelName);
 
-    // If there was a current model, delete it to save space
-    if (currentModel) {
-      await sendOllamaStatusToRenderer(`Deleting old model: ${currentModel.name} to save space`);
-      await deleteModel(currentModel.name);
-    }
-
-    // Initialize the new model
-    await sendOllamaStatusToRenderer(`Initializing new model: ${newModelName}`);
-    await ollama.chat({ model: newModelName });
-
-    logger.info(`Successfully replaced model: ${currentModel?.name || 'none'} -> ${newModelName}`);
-    return true;
-  } catch (err) {
-    logger.error(`Failed to pull and replace model ${newModelName}:`, err);
+    // Then replace the current model
+    const success = await window.backendBridge.ollama.pullAndReplaceModel(newModelName);
+    return success;
+  } catch (error) {
+    logger.error('Failed to pull and replace model:', error);
     return false;
   }
 };
+
+// Get local model details using ollama.show() command
+export const getLocalModelDetails = async (modelName: string) => {
+  try {
+    if (!ollama) {
+      throw new Error('Ollama is not initialized');
+    }
+
+    const response = await ollama.show({ model: modelName });
+
+    // Log the response to see actual structure
+    logger.info(`Ollama show response for ${modelName}:`, JSON.stringify(response, null, 2));
+
+    // Cast to any to bypass TypeScript interface limitations
+    const anyResponse = response as any;
+
+    // Build parameters object including ALL fields from ollama show response
+    const parameters: Record<string, string> = {};
+
+    // Keep existing friendly name mappings
+    if (anyResponse.family) parameters['Architecture'] = anyResponse.family;
+    if (anyResponse.parameter_size) parameters['Parameters'] = anyResponse.parameter_size;
+    if (anyResponse.quantization_level) parameters['Quantization'] = anyResponse.quantization_level;
+    if (anyResponse.system) parameters['System prompt'] = anyResponse.system;
+
+    // Add all other fields from the response dynamically
+    const excludedFields = [
+      'family',
+      'parameter_size',
+      'quantization_level',
+      'system',
+      'parameters',
+    ];
+    Object.keys(anyResponse).forEach((key) => {
+      if (!excludedFields.includes(key) && anyResponse[key] != null) {
+        const value = anyResponse[key];
+        // Convert objects/arrays to JSON strings for display
+        const displayValue =
+          typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+        // Capitalize first letter of key for display
+        const displayKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+        parameters[displayKey] = displayValue;
+      }
+    });
+
+    // Handle parameters field specially to extract stop tokens properly
+    if (anyResponse.parameters) {
+      const stopTokens = anyResponse.parameters
+        .split('\n')
+        .filter((line: string) => line.includes('stop'));
+      if (stopTokens.length > 0) {
+        parameters['Stop tokens'] = stopTokens.join(', ').replace(/stop\s+/g, '');
+      }
+      // Also include raw parameters for completeness
+      parameters['Raw parameters'] = anyResponse.parameters;
+    }
+
+    return {
+      name: modelName,
+      description: 'Local model - use ollama run ' + modelName + ' to interact',
+      tags: [], // ollama show doesn't provide tags in response
+      examples: [], // ollama show doesn't provide examples in response
+      parameters,
+      url: '', // ollama show doesn't provide URLs
+    };
+  } catch (error) {
+    logger.error(`Failed to get local model details for ${modelName}:`, error);
+    throw error;
+  }
+};
+
+// Scrape model information from Ollama website
+export const scrapeModelInfo = async (modelUrl: string, modelName: string) => {
+  logger.info(`Scraping model info for: ${modelName} from ${modelUrl}`);
+
+  try {
+    const response = await fetch(modelUrl, {
+      headers: {
+        'User-Agent': 'Morpheus-Client/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch model page: ${response.status}`);
+    }
+
+    const html = await response.text();
+
+    // Parse model information from HTML
+    const modelInfo = {
+      name: modelName,
+      description: extractDescription(html),
+      tags: extractTags(html),
+      examples: extractExamples(html),
+      parameters: extractParameters(html),
+      url: modelUrl,
+    };
+
+    logger.info(`Scraped model info for ${modelName}:`, modelInfo);
+    return modelInfo;
+  } catch (error) {
+    logger.error(`Failed to scrape model info for ${modelName}:`, error);
+    throw error;
+  }
+};
+
+// Helper functions to extract data from HTML
+function extractDescription(html: string): string {
+  // Look for description in meta tags or main content
+  const metaDescMatch = html.match(
+    /<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i,
+  );
+  if (metaDescMatch) {
+    return metaDescMatch[1];
+  }
+
+  // Fallback: look for description in page content
+  const descMatch = html.match(/<p[^>]*class=["'][^"']*description[^"']*["'][^>]*>([^<]*)</i);
+  if (descMatch) {
+    return descMatch[1].trim();
+  }
+
+  return 'No description available';
+}
+
+function extractTags(html: string): string[] {
+  const tags: string[] = [];
+
+  // Look for tags in various formats
+  const tagMatches = html.matchAll(/<span[^>]*class=["'][^"']*tag[^"']*["'][^>]*>([^<]*)</gi);
+  for (const match of tagMatches) {
+    const tag = match[1].trim();
+    if (tag && !tags.includes(tag)) {
+      tags.push(tag);
+    }
+  }
+
+  return tags;
+}
+
+function extractExamples(html: string): string[] {
+  const examples: string[] = [];
+
+  // Look for code blocks or example sections
+  const codeMatches = html.matchAll(/<code[^>]*>([^<]*)</gi);
+  for (const match of codeMatches) {
+    const example = match[1].trim();
+    if (example && example.length > 10 && !examples.includes(example)) {
+      examples.push(example);
+    }
+  }
+
+  return examples.slice(0, 3); // Limit to 3 examples
+}
+
+function extractParameters(html: string): Record<string, string> {
+  const params: Record<string, string> = {};
+
+  // Look for parameter information
+  const sizeMatch = html.match(/([0-9.]+[BMG])/i);
+  if (sizeMatch) {
+    params.size = sizeMatch[1];
+  }
+
+  const familyMatch = html.match(/family["']?\s*:\s*["']?([^"',\s}]+)/i);
+  if (familyMatch) {
+    params.family = familyMatch[1];
+  }
+
+  return params;
+}

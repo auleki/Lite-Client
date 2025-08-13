@@ -7,6 +7,14 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import TopBar from './top-bar';
 // import BottomBar from './bottom-bar';
 
+// components
+import ChatList from '../chat-list';
+import MigrationNotification from '../migration-notification';
+import { useChatContext } from '../../contexts/chat-context';
+
+// types
+import { InferenceMode } from '../../renderer';
+
 // router
 import { MainRouter } from '../../router';
 
@@ -14,6 +22,14 @@ export default () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const {
+    currentChat,
+    createChat,
+    switchToChat,
+    deleteChat,
+    migrationCompleted,
+    dismissMigrationNotification,
+  } = useChatContext();
 
   useEffect(() => {
     const loadCurrentModel = async () => {
@@ -25,28 +41,58 @@ export default () => {
         if (currentModel?.name) {
           setCurrentModel(currentModel.name);
         } else {
-          // If no current model, check for orca-mini:3b
+          // If no current model, check for last used model first
+          let preferredModel = 'orca-mini:latest';
+          try {
+            const lastUsedModel = await window.backendBridge.ollama.getLastUsedLocalModel();
+            if (lastUsedModel) {
+              preferredModel = lastUsedModel;
+            }
+          } catch (error) {
+            console.warn('Could not get last used model, using default:', error);
+          }
+
           const allModels = await window.backendBridge.ollama.getAllModels();
           console.log('All available models:', allModels);
 
           if (allModels?.models && allModels.models.length > 0) {
-            const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:3b');
+            const preferredModelObj = allModels.models.find((m) => m.name === preferredModel);
 
-            if (orcaMini) {
-              // orca-mini:3b is available, use it as default
-              setCurrentModel('orca-mini:3b (default)');
+            if (preferredModelObj) {
+              // Preferred model is available, use it
+              setCurrentModel(`${preferredModel} (preferred)`);
+            } else if (preferredModel !== 'orca-mini:latest') {
+              // Preferred model not available, try orca-mini:latest
+              const orcaMini = allModels.models.find((m) => m.name === 'orca-mini:latest');
+              if (orcaMini) {
+                setCurrentModel('orca-mini:latest (default)');
+              } else {
+                // Neither preferred nor orca-mini available, download orca-mini
+                console.log('orca-mini:latest not found, downloading...');
+                setCurrentModel('Downloading orca-mini:latest...');
+
+                try {
+                  await window.backendBridge.ollama.getModel('orca-mini:latest');
+                  setCurrentModel('orca-mini:latest (default)');
+                  console.log('orca-mini:latest downloaded successfully');
+                } catch (downloadError) {
+                  console.error('Failed to download orca-mini:latest:', downloadError);
+                  // Fallback to first available model
+                  const fallbackModel = allModels.models[0];
+                  setCurrentModel(`${fallbackModel.name} (fallback)`);
+                }
+              }
             } else {
-              // orca-mini:3b not available, notify user and download it
-              console.log('orca-mini:3b not found, downloading...');
-              setCurrentModel('Downloading orca-mini:3b...');
+              // orca-mini:latest not available, download it
+              console.log('orca-mini:latest not found, downloading...');
+              setCurrentModel('Downloading orca-mini:latest...');
 
               try {
-                // Download orca-mini:3b
-                await window.backendBridge.ollama.getModel('orca-mini:3b');
-                setCurrentModel('orca-mini:3b (default)');
-                console.log('orca-mini:3b downloaded successfully');
+                await window.backendBridge.ollama.getModel('orca-mini:latest');
+                setCurrentModel('orca-mini:latest (default)');
+                console.log('orca-mini:latest downloaded successfully');
               } catch (downloadError) {
-                console.error('Failed to download orca-mini:3b:', downloadError);
+                console.error('Failed to download orca-mini:latest:', downloadError);
                 // Fallback to first available model
                 const fallbackModel = allModels.models[0];
                 setCurrentModel(`${fallbackModel.name} (fallback)`);
@@ -66,7 +112,26 @@ export default () => {
   }, []);
 
   const handleNewChat = () => {
+    // The new chat creation will be handled by the ChatList component
+    // Just navigate to chat route
     navigate('/chat');
+  };
+
+  const handleChatSelect = (chatId: string) => {
+    navigate(`/chat/${chatId}`);
+  };
+
+  const handleChatCreate = async (mode: 'local' | 'remote', model: string, title?: string) => {
+    const newChat = await createChat(mode, model, title);
+    navigate(`/chat/${newChat.id}`);
+  };
+
+  const handleChatDelete = async (chatId: string) => {
+    await deleteChat(chatId);
+    // If we deleted the current chat, navigate to home
+    if (currentChat?.id === chatId) {
+      navigate('/');
+    }
   };
 
   const handleModels = () => {
@@ -76,6 +141,8 @@ export default () => {
   const handleSettings = () => {
     navigate('/settings');
   };
+
+  // Remove inference mode toggle since it's now per-chat
 
   const isActive = (path: string) => {
     return location.pathname === path;
@@ -91,11 +158,6 @@ export default () => {
           </Main.SidebarHeader>
 
           <Main.SidebarActions>
-            <Main.ActionButton onClick={handleNewChat} $active={isActive('/chat')}>
-              <Main.ActionIcon>💬</Main.ActionIcon>
-              <Main.ActionText>New Chat</Main.ActionText>
-            </Main.ActionButton>
-
             <Main.ActionButton onClick={handleModels} $active={isActive('/registry')}>
               <Main.ActionIcon>📦</Main.ActionIcon>
               <Main.ActionText>Models</Main.ActionText>
@@ -106,6 +168,16 @@ export default () => {
               <Main.ActionText>Settings</Main.ActionText>
             </Main.ActionButton>
           </Main.SidebarActions>
+
+          {/* Chat List */}
+          <Main.ChatListSection>
+            <ChatList
+              currentChatId={currentChat?.id}
+              onChatSelect={handleChatSelect}
+              onChatCreate={handleChatCreate}
+              onChatDelete={handleChatDelete}
+            />
+          </Main.ChatListSection>
 
           <Main.SidebarFooter>
             <Main.StatusIndicator>
@@ -130,6 +202,9 @@ export default () => {
           <MainRouter />
         </Main.MainWrapper>
       </Main.ContentArea>
+
+      {/* Migration Notification */}
+      <MigrationNotification show={migrationCompleted} onDismiss={dismissMigrationNotification} />
     </Main.Layout>
   );
 };
@@ -177,7 +252,12 @@ const Main = {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-bottom: auto;
+    margin-bottom: 20px;
+  `,
+  ChatListSection: Styled.div`
+    flex: 1;
+    min-height: 0;
+    margin-bottom: 20px;
   `,
   ActionButton: Styled.button<{ $active: boolean }>`
     display: flex;
@@ -206,10 +286,10 @@ const Main = {
     font-weight: 500;
   `,
   SidebarFooter: Styled.div`
-    margin-top: auto;
     padding-top: 20px;
-    border-top: 1px solid ${(props) => props.theme.colors.hunter};
+    border-top: 1px solid ${(props) => props.theme.colors.hunter}40;
   `,
+
   StatusIndicator: Styled.div`
     display: flex;
     align-items: center;

@@ -15,6 +15,7 @@ export const RoutesWrapper = () => {
       <Route path="/" element={<Navigate to="/chat" />} />
       <Route path="/settings" Component={SettingsView} />
       <Route path="/chat" Component={ChatView} />
+      <Route path="/chat/:chatId" Component={ChatView} />
       <Route path="/registry" Component={RegistryView} />
     </Routes>
   );
