@@ -32,11 +32,6 @@
       "prettier --write"
     ]
   },
-  "husky": {
-    "hooks": {
-      "pre-commit": "yarn run pretty"
-    }
-  },
   "eslintConfig": {
     "extends": "react-app"
   },

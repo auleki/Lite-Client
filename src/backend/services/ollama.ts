@@ -1,6 +1,6 @@
 import { app, ipcMain } from 'electron';
 import { Ollama } from 'ollama';
-import { execFile, ChildProcess } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import { sendOllamaStatusToRenderer } from '..';
 import { MOR_PROMPT } from './prompts';
@@ -51,6 +51,9 @@ export const loadOllama = async () => {
   }
 
   const customAppData = getModelPathFromStorage();
+
+  // First try bundled executable (now with working DLLs)
+  await sendOllamaStatusToRenderer(`attempting to use bundled ollama executable`);
   runningInstance = await packedExecutableOllamaSpawn(customAppData);
 
   if (runningInstance) {
@@ -60,7 +63,24 @@ export const loadOllama = async () => {
     });
 
     await sendOllamaStatusToRenderer(
-      `local instance of ollama is running and connected at ${DEFAULT_OLLAMA_URL}`,
+      `bundled ollama instance is running and connected at ${DEFAULT_OLLAMA_URL}`,
+    );
+
+    return true;
+  }
+
+  // Only fall back to system Ollama if bundled fails completely
+  await sendOllamaStatusToRenderer(`bundled ollama failed, trying system-installed ollama`);
+  runningInstance = await trySystemOllama(customAppData);
+
+  if (runningInstance) {
+    // connect to local instance
+    ollama = new Ollama({
+      host: DEFAULT_OLLAMA_URL,
+    });
+
+    await sendOllamaStatusToRenderer(
+      `system ollama instance is running and connected at ${DEFAULT_OLLAMA_URL}`,
     );
 
     return true;
@@ -86,15 +106,134 @@ export const isOllamaInstanceRunning = async (url?: string): Promise<boolean> =>
 };
 
 export const packedExecutableOllamaSpawn = async (customDataPath?: string) => {
-  await sendOllamaStatusToRenderer(`trying to spawn locally installed ollama`);
+  await sendOllamaStatusToRenderer(`trying to spawn bundled ollama executable`);
 
   try {
     spawnLocalExecutable(customDataPath);
-  } catch (err) {
-    console.error(err);
-  }
 
-  return await runDelayed(isOllamaInstanceRunning, 10000);
+    // Wait a bit for the process to start and check for DLL errors
+    const isRunning = await runDelayed(isOllamaInstanceRunning, 5000);
+
+    if (!isRunning) {
+      // If not running, try system Ollama
+      await sendOllamaStatusToRenderer(
+        `bundled ollama failed to start, trying system-installed ollama`,
+      );
+      return await trySystemOllama(customDataPath);
+    }
+
+    // Test if the bundled Ollama can actually load models by trying a simple operation
+    try {
+      const testOllama = new Ollama({ host: DEFAULT_OLLAMA_URL });
+      await testOllama.list(); // This will fail if DLL issues exist
+      return true;
+    } catch (dllError) {
+      console.error('Bundled Ollama has DLL issues:', dllError);
+      logger.error('Bundled Ollama has DLL issues:', dllError);
+
+      // Kill the bundled process and try system Ollama
+      if (ollamaProcess) {
+        killProcess(ollamaProcess);
+        ollamaProcess = null;
+      }
+
+      await sendOllamaStatusToRenderer(
+        `bundled ollama has DLL issues, trying system-installed ollama`,
+      );
+      return await trySystemOllama(customDataPath);
+    }
+  } catch (err) {
+    console.error('Failed to spawn bundled Ollama:', err);
+    logger.error('Failed to spawn bundled Ollama:', err);
+
+    // Try fallback to system-installed Ollama
+    await sendOllamaStatusToRenderer(`bundled ollama failed, trying system-installed ollama`);
+    return await trySystemOllama(customDataPath);
+  }
+};
+
+// Fallback function to try system-installed Ollama
+export const trySystemOllama = async (customDataPath?: string) => {
+  try {
+    await sendOllamaStatusToRenderer(`attempting to use system-installed ollama`);
+
+    // Try multiple common Ollama installation paths
+    const possiblePaths = [
+      'ollama', // In PATH
+      'C:\\Program Files\\Ollama\\ollama.exe',
+      'C:\\Users\\zod\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Ollama.Ollama_8wekyb3d8bbwe\\LocalState\\ollama.exe',
+      path.join(
+        process.env.LOCALAPPDATA || '',
+        'Microsoft',
+        'WinGet',
+        'Packages',
+        'Ollama.Ollama_8wekyb3d8bbwe',
+        'LocalState',
+        'ollama.exe',
+      ),
+    ];
+
+    let ollamaPath = null;
+    for (const testPath of possiblePaths) {
+      try {
+        if (testPath === 'ollama') {
+          // Test if it's in PATH
+          const testProcess = spawn('ollama', ['--version'], { stdio: 'pipe' });
+          testProcess.on('error', () => {
+            /* ignore */
+          });
+          testProcess.on('close', (code) => {
+            if (code === 0) {
+              ollamaPath = 'ollama';
+            }
+          });
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        } else if (fs.existsSync(testPath)) {
+          ollamaPath = testPath;
+          break;
+        }
+      } catch (e) {
+        // Continue to next path
+      }
+    }
+
+    if (!ollamaPath) {
+      throw new Error('No system Ollama installation found');
+    }
+
+    console.log('Using system Ollama at:', ollamaPath);
+
+    // Try to spawn system Ollama
+    const env = {
+      ...process.env,
+      OLLAMA_MODELS: customDataPath || app.getPath('userData'),
+    };
+
+    ollamaProcess = spawn(ollamaPath, ['serve'], {
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: true,
+    });
+
+    ollamaProcess.on('error', (err) => {
+      console.error('System Ollama spawn error:', err);
+      logger.error('System Ollama spawn error:', err);
+    });
+
+    ollamaProcess.stdout?.on('data', (data) => {
+      console.log('System Ollama stdout:', data.toString());
+    });
+
+    ollamaProcess.stderr?.on('data', (data) => {
+      console.error('System Ollama stderr:', data.toString());
+    });
+
+    return await runDelayed(isOllamaInstanceRunning, 10000);
+  } catch (err) {
+    console.error('System Ollama fallback failed:', err);
+    logger.error('System Ollama fallback failed:', err);
+    return false;
+  }
 };
 
 export const devRunLocalWSLOllama = (customDataPath?: string) => {
@@ -108,26 +247,78 @@ export const spawnLocalExecutable = async (customDataPath?: string) => {
   try {
     const { executablePath, appDataPath } = getOllamaExecutableAndAppDataPath(customDataPath);
 
+    console.log('Executable path:', executablePath);
+    console.log('App data path:', appDataPath);
+    console.log('Executable exists:', fs.existsSync(executablePath));
+    console.log('App data path exists:', fs.existsSync(appDataPath));
+
+    // Check if executable exists
+    if (!fs.existsSync(executablePath)) {
+      throw new Error(`Ollama executable not found at: ${executablePath}`);
+    }
+
     if (!fs.existsSync(appDataPath)) {
       createDirectoryElevated(appDataPath);
     }
 
+    // Create a more robust environment setup
     const env = {
       ...process.env,
       OLLAMA_MODELS: appDataPath,
+      // Ensure Windows system paths are included
+      PATH: process.env.PATH + ';C:\\Windows\\System32;C:\\Windows\\SysWOW64;C:\\Windows',
     };
 
-    ollamaProcess = execFile(executablePath, ['serve'], { env }, (err, stdout, stderr) => {
-      if (err) {
-        throw new Error(`exec error: ${err.message}`);
-      }
+    console.log('Environment PATH:', env.PATH);
 
-      if (stderr) {
-        throw new Error(`stderr: ${stderr}`);
-      }
+    // Use spawn with better error handling
+    ollamaProcess = spawn(executablePath, ['serve'], {
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: path.dirname(executablePath),
+      // Add shell option for Windows to help with DLL loading
+      shell: process.platform === 'win32',
     });
+
+    // Set up comprehensive error handling
+    ollamaProcess.on('error', (err) => {
+      console.error('Spawn error:', err);
+      logger.error('Failed to spawn Ollama process:', err);
+    });
+
+    ollamaProcess.stdout?.on('data', (data) => {
+      const output = data.toString();
+      console.log('Ollama stdout:', output);
+      logger.info('Ollama stdout:', output);
+    });
+
+    ollamaProcess.stderr?.on('data', (data) => {
+      const output = data.toString();
+      console.error('Ollama stderr:', output);
+      logger.warn('Ollama stderr:', output);
+    });
+
+    ollamaProcess.on('close', (code) => {
+      console.log(`Ollama process exited with code ${code}`);
+      logger.info(`Ollama process exited with code ${code}`);
+    });
+
+    ollamaProcess.on('exit', (code, signal) => {
+      console.log(`Ollama process exited with code ${code} and signal ${signal}`);
+      logger.info(`Ollama process exited with code ${code} and signal ${signal}`);
+    });
+
+    // Add a timeout to detect if the process fails to start properly
+    setTimeout(() => {
+      if (ollamaProcess && ollamaProcess.exitCode === null && !ollamaProcess.killed) {
+        console.log('Ollama process started successfully');
+        logger.info('Ollama process started successfully');
+      }
+    }, 5000);
   } catch (err) {
-    logger.error(err);
+    console.error('SpawnLocalExecutable error:', err);
+    logger.error('SpawnLocalExecutable error:', err);
+    throw err; // Re-throw to allow proper error handling upstream
   }
 };
 
