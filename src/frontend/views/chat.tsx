@@ -282,7 +282,67 @@ const Chat = {
     background: transparent;
     color: ${(props) => props.theme.colors.notice};
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: 14px;
+    font-size: ${(props) => props.theme.fonts.size.small};
+    word-wrap: break-word;
+    margin-bottom: 5px;
+  `,
+  Answer: Styled.span`
+    display: flex;
+    color: ${(props) => props.theme.colors.emerald};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.small};
+    margin-left: 20px;
+  `,
+  PollingIndicator: Styled(ThreeDots)`
+    display: flex;
+  `,
+  Bottom: Styled.div`
+    display: flex;
+    width: 100%;
+    height: 20%;
+    background: ${(props) => props.theme.colors.core};
+    justify-content: center;
+  `,
+  InputWrapper: Styled.div`
+    display: flex;
+    width: 90%;
+    height: 40px;
+    position: relative;
+    align-items: center;
+  `,
+  Input: Styled.input`
+    display: flex;
+    width: 100%;
+    height: 40px;
+    border-radius: 30px;
+    padding: 0 40px 0 25px;
+    background: ${(props) => props.theme.colors.core};
+    border: 2px solid ${(props) => props.theme.colors.hunter};
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.small};
+    &:focus {
+      border: 2px solid ${(props) => props.theme.colors.emerald};
+    }
+  `,
+  Arrow: Styled.span`
+    display: flex;
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: ${(props) => props.theme.fonts.size.small};
+    position: absolute;
+    left: 10px;
+  `,
+  SubmitButton: Styled.button`
+    display: flex;
+    width: 30px;
+    height: 30px;
+    border-radius: 25px;
+    background: ${(props) => props.theme.colors.hunter};
+    position: absolute;
+    right: 5px;
+    cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+    border: none;
 
     &:focus {
       outline: none;
