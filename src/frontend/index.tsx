@@ -11,19 +11,19 @@ import AppInit from './components/layout/app-init';
 // providers
 import ThemeProvider from './theme/theme-provider';
 import { ChatProvider } from './contexts/chat-context';
-// import { MetaMaskProvider } from '@metamask/sdk-react';
+import { MetaMaskProvider } from '@metamask/sdk-react';
 
 // modals
-// import QrCodeModal from './components/modals/qr-code-modal';
+import { QrCodeModal } from './components/modals/qr-code-modal';
 
 // styles
 import GlobalStyle from './theme/index';
 
 // constants
-// import { LOGO_METAMASK_BASE64 } from './constants';
+import { LOGO_METAMASK_BASE64 } from './constants';
 
 // utils
-// import { updateQrCode } from './utils/utils';
+import { updateQrCode } from './helpers';
 
 // events
 // import { IpcChannel } from '../events';
@@ -89,8 +89,65 @@ const AppRoot = () => {
     <React.StrictMode>
       <ThemeProvider>
         <ChatProvider>
-          {!isInitialized && <AppInit />}
-          {isInitialized && <Main />}
+          <MetaMaskProvider
+            debug={false}
+            sdkOptions={{
+              logging: {
+                developerMode: false,
+              },
+              communicationServerUrl: 'https://metamask-sdk-socket.metafi.codefi.network/',
+              checkInstallationImmediately: false,
+              i18nOptions: {
+                enabled: true,
+              },
+              dappMetadata: {
+                name: 'Morpheus Node',
+                url: 'https://mor.org',
+                base64Icon: LOGO_METAMASK_BASE64,
+              },
+
+              modals: {
+                install: ({ link }) => {
+                  let modalContainer: HTMLElement;
+
+                  return {
+                    mount: () => {
+                      modalContainer = document.createElement('div');
+
+                      modalContainer.id = 'meta-mask-modal-container';
+
+                      document.body.appendChild(modalContainer);
+
+                      const modalRoot = createRoot(modalContainer);
+
+                      modalRoot.render(
+                        <QrCodeModal
+                          onClose={() => {
+                            modalRoot.unmount();
+                            modalContainer.remove();
+                          }}
+                        />,
+                      );
+
+                      setTimeout(() => {
+                        updateQrCode(link);
+                      }, 100);
+                    },
+
+                    unmount: () => {
+                      if (modalContainer) {
+                        modalContainer.remove();
+                      }
+                    },
+                  };
+                },
+              },
+            }}
+          >
+            {!isInitialized && <AppInit />}
+            {isInitialized && <Main />}
+            {/* {modelsPathFetched && !isModelsPathSet && <ChooseDirectoryModalComponent onClick={async () => await handleSelectFolderClicked()} />} */}
+          </MetaMaskProvider>
         </ChatProvider>
       </ThemeProvider>
     </React.StrictMode>

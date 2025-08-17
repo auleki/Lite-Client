@@ -31,7 +31,8 @@ const ChatView = (): React.JSX.Element => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { provider, account } = useSDK();
+  const [selectedNetwork, setSelectedNetwork] = useState('');
+  const { provider, account, connected } = useSDK();
 
   const chatMainRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
@@ -128,6 +129,19 @@ const ChatView = (): React.JSX.Element => {
     }
   };
 
+  const handleNetworkChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedChain = e.target.value;
+
+    const selectedValue = e.target.value;
+    setSelectedNetwork(selectedValue);
+
+    // Check if the default option is selected
+    if (!selectedChain) {
+      console.log('No network selected.');
+      return; // Early return to avoid further execution
+    }
+  };
+
   const formatTimestamp = (timestamp: Date) => {
     return new Date(timestamp).toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -137,6 +151,15 @@ const ChatView = (): React.JSX.Element => {
 
   return (
     <Chat.Layout>
+      {connected && (
+        <Chat.Dropdown onChange={handleNetworkChange} value={selectedNetwork}>
+          <option value="">Select a network</option>
+          <option value="0x1">Ethereum</option>
+          <option value="0xaa36a7">Sepolia</option>
+          <option value="0xa4b1">Arbitrum</option>
+          <option value="0x64">Gnosis</option>
+        </Chat.Dropdown>
+      )}
       <Chat.Main ref={chatMainRef}>
         {!currentChat && (
           <Chat.WelcomeMessage>
@@ -250,6 +273,21 @@ const Chat = {
     flex-direction: column;
     height: 100%;
     background: ${(props) => props.theme.colors.core};
+  `,
+  Dropdown: Styled.select`
+    margin: 10px 20px;
+    padding: 8px 12px;
+    border: 1px solid ${(props) => props.theme.colors.hunter};
+    border-radius: 5px;
+    background: transparent;
+    color: ${(props) => props.theme.colors.notice};
+    font-family: ${(props) => props.theme.fonts.family.primary.regular};
+    font-size: 14px;
+
+    &:focus {
+      outline: none;
+      border-color: ${(props) => props.theme.colors.emerald};
+    }
   `,
   Main: Styled.div`
     flex: 1;
@@ -401,9 +439,14 @@ const Chat = {
     border: 1px solid ${(props) => props.theme.colors.hunter};
     border-radius: 5px;
     font-family: ${(props) => props.theme.fonts.family.primary.regular};
-    font-size: 14px;
+    font-size: ${(props) => props.theme.fonts.size.small};
     background: transparent;
     color: ${(props) => props.theme.colors.notice};
+
+    &:focus {
+      outline: none;
+      border: 2px solid ${(props) => props.theme.colors.emerald};
+    }
 
     &:focus {
       outline: none;

@@ -65,6 +65,7 @@ const config: ForgeConfig = {
   makers: [
     new MakerSquirrel({
       setupIcon: 'src/frontend/assets/images/circle-mor-logo.ico',
+      loadingGif: 'undefined', // Disable the loading GIF
     }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
